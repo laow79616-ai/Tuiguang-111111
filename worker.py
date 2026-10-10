@@ -761,3 +761,19 @@ class ShareWorker:
             logger.warning(f"[Worker-{self.worker_id}] 限制满10次，自动删除")
             return True
         return False
+
+    async def forward_share_to_user(self, user_entity, bot_msg=None):
+        """转发分享内容到目标用户"""
+        try:
+            if not user_entity:
+                return False, "无目标用户"
+            # 如果有 bot 消息，直接转发
+            if bot_msg and hasattr(self, "client") and self.client:
+                await self.client.forward_messages(user_entity, bot_msg)
+                return True, "转发成功"
+            # 否则发一条简单消息
+            await self.client.send_message(user_entity, "你好")
+            return True, "发送成功"
+        except Exception as e:
+            logger.warning(f"[Worker] forward_share_to_user 失败: {e}")
+            return False, str(e)

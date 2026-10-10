@@ -27,7 +27,6 @@ from pathlib import Path
 from datetime import datetime, timedelta
 from collections import deque
 
-
 # API_GROUP_ASSIGN_V1
 def _api_cfg_path():
     from pathlib import Path as _P
@@ -133,8 +132,6 @@ def api_replace_group(group_index):
     _save_proxies_list(proxies, raw)
     return {"ok": True, "message": f"线路{group_index+1} 已换 API {pick.get('api_id')}"}
 
-
-
 def resolve_api_for_worker(wc, config):
     """优先：水军所在 IP 组的 assigned_api；没有则待配池随机 1 条；再没有才用系统默认。"""
     try:
@@ -159,7 +156,6 @@ def resolve_api_for_worker(wc, config):
     except Exception:
         pass
     return config.get("api_id"), config.get("api_hash")
-
 
 # GROUP_RUNTIME_V2
 _group_rr_index = 0
@@ -339,7 +335,6 @@ logging.getLogger("telethon").setLevel(logging.WARNING)
 logging.getLogger("telethon.network").setLevel(logging.WARNING)
 logging.getLogger("telethon.network.mtprotosender").setLevel(logging.WARNING)
 
-
 # ============ 全局状态 ============
 workers = {}  # worker_id -> ShareWorker
 
@@ -357,7 +352,6 @@ def _persist_worker_rate_limit(worker_id, rate_limit_count, has_been_banned_24h,
         save_json(WORKERS_CONFIG_FILE, {"workers": worker_list})
     except Exception as e:
         logger.error(f"持久化限制次数失败: {e}")
-
 
 bot_app = None  # Telegram Bot Application
 scheduler_task = None
@@ -434,8 +428,6 @@ async def check_workers_running_low(worker_configs, interval_min=120):
         _worker_low_notified_at = now
         logger.warning(f"[预警] 水军不足已上报: usable={usable}, capacity={capacity}, need_5h={need_for_5h}")
 
-
-
 async def send_panel_notify(text: str):
     """任何状态上报；失败写日志"""
     logger.info(f"[通知] 准备发送: {str(text)[:80]}")
@@ -478,12 +470,6 @@ def _today_send_stats():
     except Exception:
         return {"today": 0, "total": 0}
 
-
-
-
-
-
-
 def log_activity(action, details="", worker_phone="", target="", status="info"):
     """记录工作流活动"""
     global activity_log
@@ -504,7 +490,6 @@ MAX_CONCURRENT_CONNECTIONS = 20
 CONNECTION_INTERVAL = 10  # 秒
 MEMORY_THRESHOLD = 80  # %
 
-
 # ============ IP线路固定绑定 / 轮询调度 ============
 IP_LINE_MAX_WORKERS = 10
 GROUP_PER_IP = 10
@@ -512,10 +497,8 @@ MAX_IP_GROUPS = 30
 IP_LINE_MAX_LINES = 30
 _ip_line_cursor = 0
 
-
 def _norm_phone(ph):
     return str(ph or "").replace(" ", "").replace("+", "").strip()
-
 
 def _proxy_tuple_from_obj(proxy):
     if not proxy:
@@ -529,7 +512,6 @@ def _proxy_tuple_from_obj(proxy):
         "password": proxy.get("password") or "",
     }
 
-
 def _find_proxy(proxies, proxy_id=None, host=None, port=None):
     if proxy_id:
         for p in proxies:
@@ -541,7 +523,6 @@ def _find_proxy(proxies, proxy_id=None, host=None, port=None):
                 return p
     return None
 
-
 def _worker_bound_proxy_id(w, proxies):
     pid = w.get("proxy_id") or w.get("bound_proxy_id")
     if pid:
@@ -550,11 +531,9 @@ def _worker_bound_proxy_id(w, proxies):
     p = _find_proxy(proxies, host=px.get("host"), port=px.get("port"))
     return p.get("id") if p else None
 
-
 def _active_ip_lines(proxies):
     lines = [p for p in proxies if p.get("status", "active") != "disabled"]
     return lines[:IP_LINE_MAX_LINES]
-
 
 def bind_worker_to_proxy_locked(worker, proxy, proxies, workers, *, allow_rebind=False):
     """把水军锁到指定IP。已绑其他IP则拒绝。每条最多10个。"""
@@ -580,11 +559,9 @@ def bind_worker_to_proxy_locked(worker, proxy, proxies, workers, *, allow_rebind
             p["assigned_bots"] = [x for x in (p.get("assigned_bots") or []) if x != wid]
     return True, "ok"
 
-
 def worker_in_cooldown(w):
     until = float(w.get("cooldown_until") or 0)
     return until > time.time()
-
 
 def mark_worker_cooldown(w, seconds=900, reason="flood"):
     w["cooldown_until"] = time.time() + int(seconds)
@@ -593,7 +570,6 @@ def mark_worker_cooldown(w, seconds=900, reason="flood"):
     w["pool"] = "cooldown"
     # 归属IP不变
     return w
-
 
 def clear_worker_cooldown_if_ready(w):
     if not worker_in_cooldown(w):
@@ -604,7 +580,6 @@ def clear_worker_cooldown_if_ready(w):
             w["cooldown_until"] = 0
         return True
     return False
-
 
 def pick_one_idle_worker_on_ip(proxy, workers, workers_runtime=None):
     """当前IP只挑1个可工作号。冷却中的跳过，冷却结束仍只在本IP里复活。"""
@@ -626,8 +601,6 @@ def pick_one_idle_worker_on_ip(proxy, workers, workers_runtime=None):
             continue
         return w
     return None
-
-
 
 def attach_group_fields(proxy_list, worker_list=None, bot_list=None):
     """给 IP/水军/Bot 打组号：第 N 条 IP = 组N，每组最多10号。"""
@@ -742,10 +715,8 @@ class ProxyPool:
             "assigned_bots": sum(len(p.get("assigned_bot_accounts", [])) for p in self.proxies)
         }
 
-
     def get_all(self):
         return self.proxies
-
 
 proxy_pool = ProxyPool()
 
@@ -754,10 +725,8 @@ def load_ads():
     data = load_json(AD_CONFIG_FILE)
     return data.get("ads", [])
 
-
 def save_ads(ads):
     save_json(AD_CONFIG_FILE, {"ads": ads})
-
 
 async def bot_start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
@@ -768,7 +737,6 @@ async def bot_start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "欢迎使用快约到家推广系统！\n\n请点击下方按钮预览广告消息：",
         reply_markup=reply_markup
     )
-
 
 async def bot_preview_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ads = load_ads()
@@ -783,7 +751,6 @@ async def bot_preview_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )])
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text("请选择要预览的广告：", reply_markup=reply_markup)
-
 
 async def bot_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -849,7 +816,6 @@ async def bot_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 parse_mode="HTML"
             )
 
-
 async def bot_inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.inline_query
     query_text = query.query.strip()
@@ -913,12 +879,10 @@ async def bot_inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await query.answer(results, cache_time=5, is_personal=True)
 
-
 # ============ Web API 路由 ============
 routes = web.RouteTableDef()
 # 批量导入模块
 from batch_import import register_batch_import_routes
-
 
 @routes.get("/")
 async def index(request):
@@ -932,7 +896,6 @@ async def index(request):
         return resp
     return web.Response(text="tg_share_v2 running", content_type="text/html")
 
-
 @web.middleware
 async def auth_middleware(request, handler):
     """鉴权中间件: 放行登录端点与静态资源, 其余 /api/* 需有效 token"""
@@ -942,7 +905,6 @@ async def auth_middleware(request, handler):
     if not auth.verify_token(request.headers.get("X-Auth-Token", "")):
         return web.json_response({"ok": False, "error": "未授权或登录已过期, 请重新登录"}, status=401)
     return await handler(request)
-
 
 @routes.post("/api/login")
 async def api_login(request):
@@ -956,8 +918,6 @@ async def api_login(request):
     if auth.verify_credentials(username, password):
         return web.json_response({"ok": True, "token": auth.create_token(username)})
     return web.json_response({"ok": False, "error": "用户名或密码错误"}, status=401)
-
-
 
 @routes.get("/api/group_notes")
 async def api_group_notes_get(request):
@@ -985,7 +945,6 @@ async def api_group_notes_save(request):
         notes[no] = note
         path.write_text(json.dumps(notes, ensure_ascii=False, indent=2), encoding="utf-8")
     return web.json_response({"ok": True, "notes": notes})
-
 
 @routes.post("/api/bots/regroup")
 async def api_bots_regroup(request):
@@ -1062,7 +1021,6 @@ async def api_status(request):
         "uptime": time.time() - stats.get("start_time", time.time())
     })
 
-
 # --- 水军管理 ---
 @routes.get("/api/workers")
 async def api_workers_list(request):
@@ -1100,7 +1058,6 @@ async def api_workers_list(request):
         w["restriction_count"] = w.get("rate_limit_count", 0)
     return web.json_response(worker_list)
 
-
 @routes.post("/api/workers/add")
 async def api_worker_add(request):
     """添加水军号"""
@@ -1121,7 +1078,6 @@ async def api_worker_add(request):
         if chunk:
             bot_id = chunk[0].get("id","")
             bot_username = (chunk[0].get("username") or chunk[0].get("number") or "").lstrip("@")
-
 
     new_worker = {
         "id": f"w_{int(time.time())}_{random.randint(100,999)}",
@@ -1172,7 +1128,6 @@ async def api_worker_add(request):
     save_json(WORKERS_CONFIG_FILE, {"workers": worker_list})
     return web.json_response({"ok": True, "worker": new_worker})
 
-
 @routes.post("/api/workers/{worker_id}/connect")
 async def api_worker_connect(request):
     """连接水军号"""
@@ -1211,8 +1166,6 @@ async def api_worker_connect(request):
         return web.json_response({"ok": True, "message": "连接成功"})
     else:
         return web.json_response({"ok": False, "error": worker.last_error}, status=400)
-
-
 
 @routes.post("/api/workers/connect-all")
 async def api_workers_connect_all(request):
@@ -1404,13 +1357,11 @@ async def api_worker_login(request):
             await client.disconnect()
             return web.json_response({"ok": False, "error": err_str}, status=400)
 
-
 # --- 广告管理 ---
 @routes.get("/api/ads")
 async def api_ads_list(request):
     ads = load_ads()
     return web.json_response(ads)
-
 
 @routes.post("/api/ads")
 async def api_ads_add(request):
@@ -1429,7 +1380,6 @@ async def api_ads_add(request):
     save_ads(ads)
     return web.json_response({"ok": True, "ad": ad})
 
-
 @routes.delete("/api/ads/{ad_id}")
 async def api_ads_delete(request):
     ad_id = request.match_info["ad_id"]
@@ -1437,7 +1387,6 @@ async def api_ads_delete(request):
     ads = [a for a in ads if a.get("id") != ad_id]
     save_ads(ads)
     return web.json_response({"ok": True})
-
 
 # --- 目标用户管理 ---
 @routes.get("/api/targets")
@@ -1503,7 +1452,6 @@ async def api_targets_add(request):
     save_json(TARGETS_FILE, {"targets": targets})
     return web.json_response({"ok": True, "count": len(targets)})
 
-
 @routes.delete("/api/targets/all")
 async def api_targets_delete_all(request):
     save_json(TARGETS_FILE, {"targets": []})
@@ -1517,7 +1465,6 @@ async def api_targets_delete(request):
     targets = [t for t in targets if t["username"] != username]
     save_json(TARGETS_FILE, {"targets": targets})
     return web.json_response({"ok": True})
-
 
 # --- IP代理池管理 ---
 @routes.get("/api/proxies")
@@ -1555,13 +1502,11 @@ async def api_proxies_add(request):
     )
     return web.json_response({"ok": True, "proxy": proxy})
 
-
 @routes.delete("/api/proxies/{proxy_id}")
 async def api_proxies_delete(request):
     proxy_id = request.match_info["proxy_id"]
     proxy_pool.remove_proxy(proxy_id)
     return web.json_response({"ok": True})
-
 
 @routes.post("/api/proxies/auto-assign")
 async def api_proxies_auto_assign(request):
@@ -1579,8 +1524,6 @@ async def api_proxies_auto_assign(request):
     bot_ids = [b.get("username", b.get("name", "")) for b in bots_data.get("bots", [])]
     result = proxy_pool.auto_assign(worker_ids, bot_ids, workers_per_proxy, bots_per_proxy)
     return web.json_response({"ok": True, **result})
-
-
 
 @routes.post("/api/proxies/{proxy_id}/assign-workers")
 async def api_proxies_assign_workers(request):
@@ -1619,7 +1562,6 @@ async def api_proxies_assign_workers(request):
         "cap": IP_LINE_MAX_WORKERS,
     })
 
-
 @routes.post("/api/proxies/batch")
 async def api_proxies_batch_import(request):
     """批量导入代理 - 支持格式: host:port:username:password"""
@@ -1648,7 +1590,6 @@ async def api_proxies_batch_import(request):
             errors.append(f"{line}: {str(e)}")
     return web.json_response({"ok": True, "added": added, "errors": errors})
 
-
 # --- 系统设置 ---
 
 # === Bot管理 ===
@@ -1665,7 +1606,6 @@ def load_restrictions():
 def save_restrictions(data):
     """保存限制记录"""
     save_json(RESTRICTIONS_FILE, data)
-
 
 def auto_delete_dead_worker(worker_phone):
     """当水军被限制达到10次时，自动从系统中删除"""
@@ -1686,7 +1626,6 @@ def auto_delete_dead_worker(worker_phone):
     if journal_path.exists():
         journal_path.unlink()
     logger.info(f"[自动删除] 水军号 {worker_phone} 已从系统中完全删除")
-
 
 def _on_dead_detected(worker_id, phone, reason):
     """当检测到水军号死亡时自动删除"""
@@ -1733,7 +1672,6 @@ def get_worker_restrictions(worker_phone):
             result.append(record)
     return result
 
-
 @routes.post("/api/bots/redistribute")
 async def api_bots_redistribute(request):
     """20组均匀分配：按用户名数字排序后写入 group_no + 组内编号"""
@@ -1766,7 +1704,6 @@ async def api_bots_redistribute(request):
         per_group.append({"group": g + 1, "count": len(chunk)})
     save_json(BOTS_FILE, {"bots": bots})
     return web.json_response({"ok": True, "total": n, "groups": GROUPS, "per_group": per_group})
-
 
 @routes.get("/api/bots")
 async def api_bots_list(request):
@@ -1924,7 +1861,6 @@ async def api_restrictions_list(request):
     records.sort(key=lambda r: r.get("fail_count", 0), reverse=True)
     return web.json_response(records)
 
-
 @routes.post("/api/workers/clear-errors")
 async def api_workers_clear_errors(request):
     """清除所有水军的last_error"""
@@ -1980,7 +1916,6 @@ async def api_config_get(request):
     }
     return web.json_response(safe_config)
 
-
 @routes.post("/api/config")
 async def api_config_update(request):
     body = await request.json()
@@ -1992,8 +1927,313 @@ async def api_config_update(request):
     save_json(BOT_CONFIG_FILE, config)
     return web.json_response({"ok": True})
 
-
 # --- 发送任务 ---
+send_state = {"running": False, "stopped": False}
+async def run_7step_scheduler():
+    global send_state
+    logger.info("=== 7步工作流调度器启动 ===")
+    send_state["running"] = True
+    send_state["stopped"] = False
+    log_activity("调度器启动", "按设计执行 7步工作流", status="info")
+    config = load_json(BOT_CONFIG_FILE)
+    step_wait = int(config.get("send_interval_min", 5))
+    rest_after_success = 5
+    sent_count = 0
+    while send_state.get("running") and not send_state.get("stopped"):
+        try:
+            workers_data = load_json(WORKERS_CONFIG_FILE)
+            proxies_data = load_json(PROXY_POOL_FILE)
+            bots_data = load_json(BOTS_FILE)
+            targets_data = load_json(TARGETS_FILE)
+            workers_list = workers_data.get("workers", []) if isinstance(workers_data, dict) else workers_data
+            proxies = proxies_data.get("proxies", []) if isinstance(proxies_data, dict) else proxies_data
+            all_bots = bots_data.get("bots", []) if isinstance(bots_data, dict) else bots_data
+            targets = [t for t in (targets_data.get("targets", []) if isinstance(targets_data, dict) else targets_data)
+                       if t.get("status") not in ("done", "failed", "sent")]
+            if not targets:
+                await log_step(0, "无待处理目标", status="info")
+                await asyncio.sleep(10)
+                continue
+            worker_cfg, gi = pick_worker_group_rr(workers_list, proxies)
+            if not worker_cfg:
+                await log_step(1, "无可用水军", status="warning")
+                await asyncio.sleep(5)
+                continue
+            wid = worker_cfg.get("id")
+            phone = worker_cfg.get("phone", "")
+            await log_step(1, "选中水军", worker_phone=phone, details=f"组{gi+1 if gi is not None else '?'}", status="info")
+            worker = workers.get(wid)
+            if not worker:
+                try:
+                    from worker import ShareWorker
+                    api_id = config.get("api_id")
+                    api_hash = config.get("api_hash")
+                    worker = ShareWorker(worker_cfg, api_id, api_hash)
+                    workers[wid] = worker
+                    await worker.ensure_connected()
+                    await log_step(1, "自动连接水军", worker_phone=phone, status="info")
+                except Exception as e:
+                    await log_step(1, "水军连接失败", worker_phone=phone, details=str(e), status="error")
+                    continue
+            elif not getattr(worker, "_connected", False):
+                try:
+                    await worker.ensure_connected()
+                    await log_step(1, "重新连接水军", worker_phone=phone, status="info")
+                except Exception as e:
+                    await log_step(1, "重连失败", worker_phone=phone, details=str(e), status="error")
+                    continue
+            target = targets[0]
+            target_username = target.get("username", "").lstrip("@")
+            await log_step(2, "检查目标用户", worker_phone=phone, target=target_username, status="info")
+            try:
+                user_entity, matched = await asyncio.wait_for(worker.search_user(target_username), timeout=30)
+                if not (matched and user_entity):
+                    target["status"] = "failed"
+                    target["result"] = "首次验证失败，不再使用"
+                    save_json(TARGETS_FILE, {"targets": targets_data.get("targets", targets)})
+                    await log_step(2, "验证失败", worker_phone=phone, target=target_username, details="首次失败，此用户不再使用", status="error")
+                    continue
+                await log_step(2, "验证成功", worker_phone=phone, target=target_username, status="success")
+            except Exception as e:
+                await log_step(2, "验证异常", worker_phone=phone, target=target_username, details=str(e), status="error")
+                continue
+            group_bots = [b for b in all_bots if b.get("group") == gi]
+            if not group_bots:
+                group_bots = all_bots
+            bot = pick_bot_for_group(gi, group_bots)
+            if not bot:
+                await log_step(3, "无可用Bot", worker_phone=phone, status="error")
+                continue
+            bot_username = bot.get("username", "").lstrip("@")
+            await log_step(3, "给Bot发送/start", worker_phone=phone, target=target_username, details=f"Bot:@{bot_username}", status="info")
+            bot_replied = await worker.send_start_and_wait(bot_username, timeout=15)
+            if not bot_replied:
+                await log_step(3, "Bot无回复", worker_phone=phone, details="马上换下一个Bot", status="warning")
+                continue
+            await log_step(3, "Bot已回复", worker_phone=phone, status="success")
+            await log_step(4, "读取Bot消息并准备转发", worker_phone=phone, status="info")
+            share_ready = await worker.read_bot_and_prepare_share(bot_username)
+            if not share_ready:
+                await log_step(4, "准备转发失败", worker_phone=phone, status="error")
+                continue
+            await log_step(4, "已准备转发", worker_phone=phone, status="success")
+            await log_step(5, "搜索目标用户", worker_phone=phone, target=target_username, status="info")
+            await log_step(6, "点击发送", worker_phone=phone, target=target_username, status="info")
+            ok, msg = await worker.forward_share_to_user(target_username, share_ready)
+            if ok:
+                sent_count += 1
+                target["status"] = "done"
+                target["result"] = "发送成功"
+                save_json(TARGETS_FILE, {"targets": targets_data.get("targets", targets)})
+                send_state["total_sent"] = send_state.get("total_sent", 0) + 1
+                send_state["today_sent"] = send_state.get("today_sent", 0) + 1
+                await log_step(7, "发送成功", worker_phone=phone, target=target_username, details="记录仪表", status="success")
+                # 更新仪表盘统计
+                try:
+                    logger.info("[STATS] 开始更新统计")
+                    stats = load_json(STATS_FILE) or {}
+                    logger.info(f"[STATS] 读取到: {stats}")
+                    today = datetime.now().strftime("%Y-%m-%d")
+                    if stats.get("today_date") != today:
+                        stats["today_date"] = today
+                        stats["today_sends"] = 0
+                    stats["today_sends"] = stats.get("today_sends", 0) + 1
+                    stats["total_sends"] = stats.get("total_sends", 0) + 1
+                    save_json(STATS_FILE, stats)
+                    logger.info(f"[STATS] 已保存: {stats}")
+                except Exception as e:
+                    logger.error(f"[STATS] 更新失败: {e}")
+                await log_step(7, "成功后休息", details=f"休息 {rest_after_success} 秒后换组换号", status="info")
+                await asyncio.sleep(rest_after_success)
+            else:
+                target["status"] = "failed"
+                target["result"] = msg or "发送失败，不再使用"
+                save_json(TARGETS_FILE, {"targets": targets_data.get("targets", targets)})
+                await log_step(7, "发送失败", worker_phone=phone, target=target_username, details="失败不记录仪表，此用户不再使用", status="error")
+        except Exception as e:
+            await log_step(0, "调度异常", details=str(e), status="error")
+        await asyncio.sleep(step_wait)
+    log_activity("调度器结束", f"本轮完成，成功 {sent_count} 条", status="info")
+    logger.info("=== 7步工作流调度器结束 ===")
+
+# ========== 7步工作流调度器 ==========
+_group_rr_index = {}
+_bot_rr_index = {}
+
+def pick_worker_group_rr(workers_list, proxies, skip_ids=None):
+    skip_ids = skip_ids or set()
+    if not workers_list or not proxies:
+        return None, None
+    n = min(30, len(proxies))
+    start = _group_rr_index.get("worker", 0)
+    for step in range(n):
+        gi = (start + step) % n
+        px = proxies[gi] if gi < len(proxies) else None
+        if not px:
+            continue
+        phones = set(px.get("assigned_worker_phones", []))
+        candidates = [w for w in workers_list if w.get("phone") in phones
+                      and w.get("id") not in skip_ids
+                      and not w.get("is_dead")
+                      and not w.get("is_restricted")
+                      and not w.get("frozen")]
+        if not candidates:
+            continue
+        candidates.sort(key=lambda w: w.get("rate_limit_count", 0))
+        _group_rr_index["worker"] = (gi + 1) % n
+        return candidates[0], gi
+    return None, None
+
+def pick_bot_for_group(group_index, bots):
+    if not bots:
+        return None
+    key = f"bot_{group_index}"
+    start = _bot_rr_index.get(key, 0)
+    for i in range(len(bots)):
+        b = bots[(start + i) % len(bots)]
+        if b.get("enabled", True) and b.get("status") != "disabled":
+            _bot_rr_index[key] = (start + i + 1) % len(bots)
+            return b
+    return None
+
+async def log_step(step, action, worker_phone="", target="", details="", status="info"):
+    msg = f"[步骤{step}] {action}"
+    if worker_phone:
+        msg += f" | 水军:{worker_phone}"
+    if target:
+        msg += f" | 目标:{target}"
+    if details:
+        msg += f" | {details}"
+    log_activity(msg, status=status)
+    logger.info(msg)
+
+async def run_7step_scheduler():
+    global send_state
+    logger.info("=== 7步工作流调度器启动 ===")
+    send_state["running"] = True
+    send_state["stopped"] = False
+    log_activity("调度器启动", "按设计执行 7步工作流", status="info")
+    config = load_json(BOT_CONFIG_FILE)
+    step_wait = int(config.get("send_interval_min", 5))
+    rest_after_success = 5
+    sent_count = 0
+    while send_state.get("running") and not send_state.get("stopped"):
+        try:
+            workers_data = load_json(WORKERS_CONFIG_FILE)
+            proxies_data = load_json(PROXY_POOL_FILE)
+            bots_data = load_json(BOTS_FILE)
+            targets_data = load_json(TARGETS_FILE)
+            workers_list = workers_data.get("workers", []) if isinstance(workers_data, dict) else workers_data
+            proxies = proxies_data.get("proxies", []) if isinstance(proxies_data, dict) else proxies_data
+            all_bots = bots_data.get("bots", []) if isinstance(bots_data, dict) else bots_data
+            targets = [t for t in (targets_data.get("targets", []) if isinstance(targets_data, dict) else targets_data)
+                       if t.get("status") not in ("done", "failed", "sent")]
+            if not targets:
+                await log_step(0, "无待处理目标", status="info")
+                await asyncio.sleep(10)
+                continue
+            worker_cfg, gi = pick_worker_group_rr(workers_list, proxies)
+            if not worker_cfg:
+                await log_step(1, "无可用水军", status="warning")
+                await asyncio.sleep(5)
+                continue
+            wid = worker_cfg.get("id")
+            phone = worker_cfg.get("phone", "")
+            await log_step(1, "选中水军", worker_phone=phone, details=f"组{gi+1 if gi is not None else '?'}", status="info")
+            worker = workers.get(wid)
+            if not worker:
+                try:
+                    from worker import ShareWorker
+                    api_id = config.get("api_id")
+                    api_hash = config.get("api_hash")
+                    worker = ShareWorker(worker_cfg, api_id, api_hash)
+                    workers[wid] = worker
+                    await worker.ensure_connected()
+                    await log_step(1, "自动连接水军", worker_phone=phone, status="info")
+                except Exception as e:
+                    await log_step(1, "水军连接失败", worker_phone=phone, details=str(e), status="error")
+                    continue
+            elif not getattr(worker, "_connected", False):
+                try:
+                    await worker.ensure_connected()
+                    await log_step(1, "重新连接水军", worker_phone=phone, status="info")
+                except Exception as e:
+                    await log_step(1, "重连失败", worker_phone=phone, details=str(e), status="error")
+                    continue
+            target = targets[0]
+            target_username = target.get("username", "").lstrip("@")
+            await log_step(2, "检查目标用户", worker_phone=phone, target=target_username, status="info")
+            try:
+                user_entity, matched = await asyncio.wait_for(worker.search_user(target_username), timeout=30)
+                if not (matched and user_entity):
+                    target["status"] = "failed"
+                    target["result"] = "首次验证失败，不再使用"
+                    save_json(TARGETS_FILE, {"targets": targets_data.get("targets", targets)})
+                    await log_step(2, "验证失败", worker_phone=phone, target=target_username, details="首次失败，此用户不再使用", status="error")
+                    continue
+                await log_step(2, "验证成功", worker_phone=phone, target=target_username, status="success")
+            except Exception as e:
+                await log_step(2, "验证异常", worker_phone=phone, target=target_username, details=str(e), status="error")
+                continue
+            group_bots = [b for b in all_bots if b.get("group") == gi]
+            if not group_bots:
+                group_bots = all_bots
+            bot = pick_bot_for_group(gi, group_bots)
+            if not bot:
+                await log_step(3, "无可用Bot", worker_phone=phone, status="error")
+                continue
+            bot_username = bot.get("username", "").lstrip("@")
+            await log_step(3, "给Bot发送/start", worker_phone=phone, target=target_username, details=f"Bot:@{bot_username}", status="info")
+            bot_replied = await worker.send_start_and_wait(bot_username, timeout=15)
+            if not bot_replied:
+                await log_step(3, "Bot无回复", worker_phone=phone, details="马上换下一个Bot", status="warning")
+                continue
+            await log_step(3, "Bot已回复", worker_phone=phone, status="success")
+            await log_step(4, "读取Bot消息并准备转发", worker_phone=phone, status="info")
+            share_ready = await worker.read_bot_and_prepare_share(bot_username)
+            if not share_ready:
+                await log_step(4, "准备转发失败", worker_phone=phone, status="error")
+                continue
+            await log_step(4, "已准备转发", worker_phone=phone, status="success")
+            await log_step(5, "搜索目标用户", worker_phone=phone, target=target_username, status="info")
+            await log_step(6, "点击发送", worker_phone=phone, target=target_username, status="info")
+            ok, msg = await worker.forward_share_to_user(target_username, share_ready)
+            if ok:
+                sent_count += 1
+                target["status"] = "done"
+                target["result"] = "发送成功"
+                save_json(TARGETS_FILE, {"targets": targets_data.get("targets", targets)})
+                send_state["total_sent"] = send_state.get("total_sent", 0) + 1
+                send_state["today_sent"] = send_state.get("today_sent", 0) + 1
+                await log_step(7, "发送成功", worker_phone=phone, target=target_username, details="记录仪表", status="success")
+                # 更新仪表盘统计
+                try:
+                    logger.info("[STATS] 开始更新统计")
+                    stats = load_json(STATS_FILE) or {}
+                    today = datetime.now().strftime("%Y-%m-%d")
+                    if stats.get("today_date") != today:
+                        stats["today_date"] = today
+                        stats["today_sends"] = 0
+                    stats["today_sends"] = stats.get("today_sends", 0) + 1
+                    stats["total_sends"] = stats.get("total_sends", 0) + 1
+                    save_json(STATS_FILE, stats)
+                    logger.info(f"[STATS] 已保存: {stats}")
+                except Exception as e:
+                    logger.error(f"[STATS] 更新失败: {e}")
+                await log_step(7, "成功后休息", details=f"休息 {rest_after_success} 秒后换组换号", status="info")
+                await asyncio.sleep(rest_after_success)
+            else:
+                target["status"] = "failed"
+                target["result"] = msg or "发送失败，不再使用"
+                save_json(TARGETS_FILE, {"targets": targets_data.get("targets", targets)})
+                await log_step(7, "发送失败", worker_phone=phone, target=target_username, details="失败不记录仪表，此用户不再使用", status="error")
+        except Exception as e:
+            await log_step(0, "调度异常", details=str(e), status="error")
+        await asyncio.sleep(step_wait)
+    log_activity("调度器结束", f"本轮完成，成功 {sent_count} 条", status="info")
+    logger.info("=== 7步工作流调度器结束 ===")
+
+
 @routes.post("/api/send/start")
 async def api_send_start(request):
     """开始发送任务"""
@@ -2004,8 +2244,6 @@ async def api_send_start(request):
         return web.json_response({"ok": False, "error": "任务已在运行中"})
     scheduler_task = asyncio.create_task(run_7step_scheduler())
     return web.json_response({"ok": True, "message": "发送任务已启动"})
-
-
 
 @routes.post("/api/send/stop")
 async def api_send_stop(request):
@@ -2047,7 +2285,6 @@ async def api_send_stop(request):
             pass
     return web.json_response({"ok": True, "message": "发送任务已停止，已断开 %s 个水军连接" % disconnected})
 
-
 @routes.get("/api/send/status")
 async def api_send_status(request):
     """发送任务状态 - 包含工作流信息"""
@@ -2075,7 +2312,6 @@ async def api_send_activity(request):
         "logs": activity_log[-50:],
         "connected_workers": [(wid, workers[wid].phone if hasattr(workers[wid], 'phone') else wid) for wid, w in workers.items() if w._connected]
     })
-
 
 # ============ 发送调度器 ============
 
@@ -2126,7 +2362,6 @@ async def _auto_reconnect_loop():
             await asyncio.sleep(0.5)
         if reconnected > 0:
             logger.info(f"[自动重连] 重连了 {reconnected} 个掉线水军")
-
 
 async def stall_send_monitor():
     """1号面板：长时间无成功发送则自动重启；重启后仍无成功则上报"""
@@ -2209,29 +2444,6 @@ async def stall_send_monitor():
             logger.error(f"[{PANEL_NAME}] stall_send_monitor 异常: {e}")
             await asyncio.sleep(30)
 
-
-
-async def run_7step_scheduler():
-    """发送调度器 - 按需连接水军号，逐个发送（带异常保护）"""
-    try:
-        await _run_send_scheduler_inner()
-    except Exception as e:
-        logger.error(f"=== 发送调度器异常退出: {e} ===")
-        try:
-            open("/tmp/tg_share_v2_sending.done", "w").write("error:"+str(e))
-            if os.path.exists("/tmp/tg_share_v2_sending"):
-                os.remove("/tmp/tg_share_v2_sending")
-        except Exception:
-            pass
-        import traceback
-        logger.error(traceback.format_exc())
-
-
-
-
-# GROUP_RR_V1
-_group_rr_index = 0
-
 def _proxy_groups_ordered():
     try:
         pdata = proxy_pool.proxies if hasattr(proxy_pool, "proxies") else []
@@ -2292,8 +2504,6 @@ async def _run_send_scheduler_inner():
             os.remove("/tmp/tg_share_v2_sending.done")
     except Exception:
         pass
-
-
 
     config = load_json(BOT_CONFIG_FILE)
     api_id = config.get("api_id")
@@ -2455,6 +2665,15 @@ async def _run_send_scheduler_inner():
                     break
                 skip_ids.add(test_wconfig.get("id"))
                 logger.warning(f"[调度] 未命中，换号 @{target['username']}")
+
+                try:
+                    if target is not None:
+                        target["status"] = "failed"
+                        target["result"] = "用户名不存在或首次验证失败"
+                        save_json(TARGETS_FILE, {"targets": targets_data.get("targets", [])})
+                        logger.info(f"[调度] 目标已标记失败: {target_username}")
+                except Exception as _e:
+                    logger.warning(f"标记目标失败时出错: {_e}")
             except Exception as e:
                 es = str(e)
                 logger.warning(f"[调度] 测试搜索异常: {e}")
@@ -2643,15 +2862,12 @@ async def _run_send_scheduler_inner():
             pass
     logger.info(f"[调度] 调度器结束，已断开 {disconnected} 个水军连接")
 
-
 async def cleanup_connections():
     """清理空闲连接"""
     for wid in list(workers.keys()):
         if workers[wid].status == "idle" and workers[wid]._connected:
             await workers[wid].disconnect()
             logger.info(f"清理连接: {wid}")
-
-
 
 async def release_banned_worker(wid):
     """释放被禁止/已死水军号的资源（断开连接、释放代理IP）"""
@@ -2688,7 +2904,6 @@ async def disconnect_oldest_worker():
         await worker.disconnect()
         logger.info(f"断开最久未使用: {wid}")
 
-
 # ============ 启动 ============
 async def start_bot():
     """启动 Telegram Bot（polling模式）"""
@@ -2715,7 +2930,6 @@ async def start_bot():
     await bot_app.updater.start_polling(drop_pending_updates=True)
     logger.info("Telegram Bot 已启动 (polling)")
 
-
 async def stop_bot():
     """停止Bot"""
     global bot_app
@@ -2723,7 +2937,6 @@ async def stop_bot():
         await bot_app.updater.stop()
         await bot_app.stop()
         await bot_app.shutdown()
-
 
 async def on_startup(app):
     """Web应用启动时"""
@@ -2763,8 +2976,6 @@ async def on_startup(app):
             globals()["_STALL_MONITOR_STARTED"] = True
             logger.info(f"[{PANEL_NAME}] 长时间无发送监控已启动 (stall 仅一次)")
 
-
-
 async def on_cleanup(app):
     """Web应用关闭时"""
     # 断开所有worker
@@ -2779,8 +2990,6 @@ async def on_cleanup(app):
         await stop_bot()
     except:
         pass
-
-
 
 # --- 1号面板：进程退出/重启时尽量上报（SIGTERM，pkill 默认）---
 _exit_notify_sent = False
@@ -2811,7 +3020,6 @@ def _sync_panel_notify(text_msg: str):
             pass
         return False
 
-
 def on_process_signal(signum, frame):
     """SIGTERM/SIGINT：上报后退出（pkill 默认 SIGTERM）"""
     global _exit_notify_sent
@@ -2836,7 +3044,6 @@ def on_process_signal(signum, frame):
     import os as _os
     _os._exit(0)
 
-
 def register_exit_signals():
     global _EXIT_SIGNALS_REGISTERED
     if globals().get("_EXIT_SIGNALS_REGISTERED"):
@@ -2851,7 +3058,6 @@ def register_exit_signals():
             logger.warning(f"注册退出信号失败: {e}")
         except Exception:
             pass
-
 
 @routes.post("/api/workers/export-deleted")
 async def api_workers_export_deleted(request):
@@ -2888,7 +3094,6 @@ async def api_save_profile_template(request):
     except Exception as e:
         return web.json_response({"ok": False, "error": str(e)}, status=400)
 
-
 @routes.post("/api/workers/apply-profile")
 async def api_apply_profile(request):
     """用模板更新所有待设置水军的资料字段（名字/用户名前缀/简介）"""
@@ -2921,7 +3126,6 @@ async def api_apply_profile(request):
 
     save_json(WORKERS_CONFIG_FILE, {"workers": workers})
     return web.json_response({"ok": True, "updated": updated})
-
 
 def _remove_worker_no_archive(worker_id, phone):
     """删除水军，不归档到 returned"""
@@ -2974,11 +3178,9 @@ def create_app():
 
     return app
 
-
 if __name__ == "__main__":
     app = create_app()
     web.run_app(app, host="0.0.0.0", port=8001)
-
 
 @routes.get("/api/api-configs")
 async def api_api_configs_get(request):
@@ -3102,161 +3304,6 @@ async def log_step(step_num, step_name, worker_phone="", target="", details="", 
     log_activity(msg, details, worker_phone=worker_phone, target=target, status=status)
     logger.info(f"[7步] {msg} | 水军:{worker_phone} 目标:{target}")
 
-async def run_7step_scheduler():
-    global current_activity, SEND_STOP_FLAG
-    SEND_STOP_FLAG = False
-    current_activity = {"status": "启动中", "worker": "", "target": "", "step": "初始化"}
-    log_activity("调度器启动", "7步工作流开始", status="info")
-    logger.info("=== 7步工作流调度器启动 ===")
-
-    config = load_json(BOT_CONFIG_FILE)
-    api_id = config.get("api_id")
-    api_hash = config.get("api_hash")
-    daily_limit = config.get("daily_limit", 30)
-    rest_after_success = config.get("rest_after_success", 300)
-    step_wait = config.get("step_wait", 2)
-
-    if not api_id or not api_hash:
-        logger.error("未配置 API ID/Hash")
-        return
-
-    targets_data = load_json(TARGETS_FILE)
-    targets = [t for t in targets_data.get("targets", []) if t.get("status") == "pending"]
-    if not targets:
-        logger.info("没有待发送目标")
-        return
-
-    workers_data = load_json(WORKERS_CONFIG_FILE)
-    worker_configs = [w for w in workers_data.get("workers", []) if w.get("status") == "active"]
-    if not worker_configs:
-        logger.info("没有可用水军")
-        return
-
-    bots_data = load_json(BOTS_FILE)
-    all_bots = bots_data.get("bots", [])
-
-    sent_count = 0
-    for target in targets:
-        if SEND_STOP_FLAG or sent_count >= daily_limit:
-            break
-
-        target_username = target.get("username", "")
-        wc, gi = pick_worker_least_limit(worker_configs, workers)
-        if not wc:
-            await log_step(1, "选水军失败", details="无可用水军，跳过此目标", status="warning")
-            continue
-
-        phone = wc.get("phone", "")
-        wid = wc.get("id")
-        await log_step(1, "从水军池拿水军", worker_phone=phone, target=target_username, details=f"组{gi+1} 限流最少号 {phone}")
-
-        worker = workers.get(wid)
-        if not worker:
-            # 自动创建并连接
-            try:
-                from worker import ShareWorker
-                api_id = config.get("api_id")
-                api_hash = config.get("api_hash")
-                worker = ShareWorker(wc, api_id, api_hash)
-                workers[wid] = worker
-                await worker.ensure_connected()
-                await log_step(1, "自动连接水军", worker_phone=phone, details="新建并连接", status="info")
-            except Exception as e:
-                await log_step(1, "水军连接失败", worker_phone=phone, details=str(e), status="error")
-                continue
-        elif not getattr(worker, "_connected", False):
-            try:
-                await worker.ensure_connected()
-                await log_step(1, "重新连接水军", worker_phone=phone, status="info")
-            except Exception as e:
-                await log_step(1, "重连失败", worker_phone=phone, details=str(e), status="error")
-                continue
-
-        await log_step(2, "检查目标用户", worker_phone=phone, target=target_username, details="搜索用户是否存在")
-        try:
-            user_entity, matched = await asyncio.wait_for(worker.search_user(target_username), timeout=30)
-            if not (matched and user_entity):
-                target["status"] = "failed"
-                target["result"] = "首次验证失败，不再使用"
-                save_json(TARGETS_FILE, {"targets": targets_data["targets"]})
-                await log_step(2, "验证失败", worker_phone=phone, target=target_username, details="首次失败，此用户不再使用", status="error")
-                # 用户名不存在也直接标记失败
-                target["status"] = "failed"
-                target["result"] = "用户名不存在或首次验证失败"
-                save_json(TARGETS_FILE, {"targets": targets_data["targets"]})
-                continue
-            await log_step(2, "验证成功", worker_phone=phone, target=target_username, status="success")
-        except Exception as e:
-            await log_step(2, "验证异常", worker_phone=phone, target=target_username, details=str(e), status="error")
-            continue
-
-        group_bots = [b for b in all_bots if b.get("group") == gi]
-        if not group_bots:
-            group_bots = all_bots
-        bot = pick_bot_for_group(gi, group_bots)
-        if not bot:
-            await log_step(3, "无可用Bot", worker_phone=phone, status="error")
-            continue
-        bot_username = bot.get("username", "").lstrip("@")
-        await log_step(3, "给Bot发送/start", worker_phone=phone, target=target_username, details=f"Bot: @{bot_username}")
-
-        bot_replied = await worker.send_start_and_wait(bot_username, timeout=15)
-        if not bot_replied:
-            await log_step(3, "Bot无回复，换下一个", worker_phone=phone, details="马上换Bot", status="warning")
-            bot2 = pick_bot_for_group(gi, group_bots)
-            if bot2 and bot2 != bot:
-                bot_username = bot2.get("username", "").lstrip("@")
-                bot_replied = await worker.send_start_and_wait(bot_username, timeout=15)
-        if not bot_replied:
-            await log_step(3, "Bot无有效回复", status="error")
-            continue
-        await log_step(3, "Bot已回复", worker_phone=phone, details=f"@{bot_username}", status="success")
-
-        await log_step(4, "读取Bot消息并点击转发", worker_phone=phone, target=target_username)
-        await worker.read_bot_and_prepare_share(bot_username)
-
-        await log_step(5, "搜索指定用户", worker_phone=phone, target=target_username)
-        await log_step(6, "确认用户并点击发送", worker_phone=phone, target=target_username)
-
-        await log_step(7, "等待验证发送结果", worker_phone=phone, target=target_username)
-        try:
-            success, msg = await asyncio.wait_for(worker.execute_share_task(target_username), timeout=60)
-            if success:
-                sent_count += 1
-                target["status"] = "sent"
-                target["sent_at"] = datetime.now().isoformat()
-                target["result"] = "成功"
-                save_json(TARGETS_FILE, {"targets": targets_data["targets"]})
-                await log_step(7, "发送成功", worker_phone=phone, target=target_username, details="已记录仪表", status="success")
-                # 更新统计
-                try:
-                    stats = load_json(STATS_FILE)
-                    from datetime import date
-                    today = str(date.today())
-                    if stats.get("today_date") != today:
-                        stats["today_sends"] = 0
-                        stats["today_date"] = today
-                    stats["total_sends"] = stats.get("total_sends", 0) + 1
-                    stats["today_sends"] = stats.get("today_sends", 0) + 1
-                    save_json(STATS_FILE, stats)
-                except Exception as e:
-                    logger.warning(f"更新统计失败: {e}")
-                await log_step(7, "成功后休息", details=f"休息 {rest_after_success} 秒后换组换号", status="info")
-                await asyncio.sleep(rest_after_success)
-            else:
-                target["status"] = "failed"
-                target["result"] = msg or "发送失败，不再使用"
-                save_json(TARGETS_FILE, {"targets": targets_data["targets"]})
-                await log_step(7, "发送失败", worker_phone=phone, target=target_username, details="失败不记录仪表，此用户不再使用", status="error")
-        except Exception as e:
-            await log_step(7, "验证异常", details=str(e), status="error")
-
-        await asyncio.sleep(step_wait)
-
-    log_activity("调度器结束", f"本轮完成，成功 {sent_count} 条", status="info")
-    logger.info("=== 7步工作流调度器结束 ===")
-
-@routes.post("/api/workers/export")
 async def api_workers_export(request):
     """一键批量导出：扫描 sessions 目录，已删除的也能导出"""
     import zipfile, io
@@ -3300,7 +3347,6 @@ async def api_workers_export(request):
         headers={"Content-Disposition": "attachment; filename=workers_export.zip"}
     )
 
-
 def _backup_deleted_worker(worker_info):
     """删除前归档 session+json 到 data/returned/{phone}/"""
     import shutil
@@ -3329,7 +3375,6 @@ def _backup_deleted_worker(worker_info):
     rec_file.write_text(json.dumps(rec, ensure_ascii=False, indent=2), encoding="utf-8")
     logger.info(f"已归档删除的水军: {phone}")
 
-
 PROFILE_TEMPLATE_FILE = DATA_DIR / "profile_template.json"
 
 @routes.get("/api/profile-template")
@@ -3337,3 +3382,53 @@ async def api_get_profile_template(request):
     data = load_json(PROFILE_TEMPLATE_FILE)
     return web.json_response(data or {})
 
+# ========== 按设计重写的 7步工作流调度器 ==========
+_group_rr_index = {}
+_bot_rr_index = {}
+
+def pick_worker_group_rr(workers_list, proxies, skip_ids=None):
+    skip_ids = skip_ids or set()
+    if not workers_list or not proxies:
+        return None, None
+    n = min(30, len(proxies))
+    start = _group_rr_index.get("worker", 0)
+    for step in range(n):
+        gi = (start + step) % n
+        px = proxies[gi] if gi < len(proxies) else None
+        if not px:
+            continue
+        phones = set(px.get("assigned_worker_phones", []))
+        candidates = [w for w in workers_list if w.get("phone") in phones
+                      and w.get("id") not in skip_ids
+                      and not w.get("is_dead")
+                      and not w.get("is_restricted")
+                      and not w.get("frozen")]
+        if not candidates:
+            continue
+        candidates.sort(key=lambda w: w.get("rate_limit_count", 0))
+        _group_rr_index["worker"] = (gi + 1) % n
+        return candidates[0], gi
+    return None, None
+
+def pick_bot_for_group(group_index, bots):
+    if not bots:
+        return None
+    key = f"bot_{group_index}"
+    start = _bot_rr_index.get(key, 0)
+    for i in range(len(bots)):
+        b = bots[(start + i) % len(bots)]
+        if b.get("enabled", True) and b.get("status") != "disabled":
+            _bot_rr_index[key] = (start + i + 1) % len(bots)
+            return b
+    return None
+
+async def log_step(step, action, worker_phone="", target="", details="", status="info"):
+    msg = f"[步骤{step}] {action}"
+    if worker_phone:
+        msg += f" | 水军:{worker_phone}"
+    if target:
+        msg += f" | 目标:{target}"
+    if details:
+        msg += f" | {details}"
+    log_activity(msg, status=status)
+    logger.info(msg)
