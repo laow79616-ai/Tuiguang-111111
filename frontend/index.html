@@ -418,6 +418,8 @@ https://t.me/kuaiyue9
                 <button class="btn btn-success" onclick="setupAllProfiles()" id="btn-setup-profiles">
                     &#x1f680; 一键开始修改资料
                 </button>
+                <button class="btn btn-primary" onclick="saveProfileTemplate()" style="margin-left:10px;">保存当前资料</button>
+                <button class="btn" onclick="loadProfileTemplate()" style="margin-left:6px;">加载已保存</button>
                 <p style="color:#888; font-size:12px; margin-top:8px;">
                     会把上面填写的资料应用到所有「待设置」的水军号，用户名会自动追加数字保证不冲突。
                 </p>
@@ -2033,6 +2035,53 @@ https://t.me/kuaiyue9
             }
         }
 
+
+        function saveProfileTemplate() {
+            var tpl = {
+                first_name: document.getElementById('profile-first-name').value,
+                last_name: document.getElementById('profile-last-name') ? document.getElementById('profile-last-name').value : '',
+                username_prefix: document.getElementById('profile-username-prefix') ? document.getElementById('profile-username-prefix').value : '',
+                bio: document.getElementById('profile-bio') ? document.getElementById('profile-bio').value : ''
+            };
+            localStorage.setItem('profile_template', JSON.stringify(tpl));
+            // 同时存到服务器
+            fetch(API + '/api/profile-template', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json', 'X-Auth-Token': localStorage.getItem('token') || ''},
+                body: JSON.stringify(tpl)
+            }).then(function(){ alert('资料已保存'); }).catch(function(){ alert('已保存到本地'); });
+        }
+        function loadProfileTemplate() {
+            var raw = localStorage.getItem('profile_template');
+            if (!raw) { alert('没有已保存的资料'); return; }
+            var tpl = JSON.parse(raw);
+            if (document.getElementById('profile-first-name')) document.getElementById('profile-first-name').value = tpl.first_name || '';
+            if (document.getElementById('profile-last-name')) document.getElementById('profile-last-name').value = tpl.last_name || '';
+            if (document.getElementById('profile-username-prefix')) document.getElementById('profile-username-prefix').value = tpl.username_prefix || '';
+            if (document.getElementById('profile-bio')) document.getElementById('profile-bio').value = tpl.bio || '';
+            alert('已加载保存的资料');
+        }
+
+
+        // 页面加载时自动恢复资料
+        (function autoLoadProfile() {
+            var raw = localStorage.getItem('profile_template');
+            if (!raw) return;
+            try {
+                var tpl = JSON.parse(raw);
+                setTimeout(function() {
+                    var fn = document.getElementById('profile-first-name');
+                    var ln = document.getElementById('profile-last-name');
+                    var up = document.getElementById('profile-username-prefix');
+                    var bio = document.getElementById('profile-bio');
+                    if (fn && tpl.first_name) fn.value = tpl.first_name;
+                    if (ln && tpl.last_name) ln.value = tpl.last_name;
+                    if (up && tpl.username_prefix) up.value = tpl.username_prefix;
+                    if (bio && tpl.bio) bio.value = tpl.bio;
+                }, 500);
+            } catch(e) {}
+        })();
+
 </script>
 <div id="login-overlay" style="display:none; position:fixed; inset:0; background:rgba(8,15,25,.92); z-index:9999; align-items:center; justify-content:center;">
     <div style="background:#1e2a38; padding:32px; border-radius:12px; width:320px; box-shadow:0 8px 40px rgba(0,0,0,.6);">
@@ -2174,6 +2223,38 @@ https://t.me/kuaiyue9
                 alert('导出出错: ' + e.message);
             }
         }
+
+
+        function loadProfileTemplate() {
+            var raw = localStorage.getItem('profile_template');
+            if (!raw) { alert('没有已保存的资料'); return; }
+            var tpl = JSON.parse(raw);
+            if (document.getElementById('profile-first-name')) document.getElementById('profile-first-name').value = tpl.first_name || '';
+            if (document.getElementById('profile-last-name')) document.getElementById('profile-last-name').value = tpl.last_name || '';
+            if (document.getElementById('profile-username-prefix')) document.getElementById('profile-username-prefix').value = tpl.username_prefix || '';
+            if (document.getElementById('profile-bio')) document.getElementById('profile-bio').value = tpl.bio || '';
+            alert('已加载保存的资料');
+        }
+
+
+        // 页面加载时自动恢复资料
+        (function autoLoadProfile() {
+            var raw = localStorage.getItem('profile_template');
+            if (!raw) return;
+            try {
+                var tpl = JSON.parse(raw);
+                setTimeout(function() {
+                    var fn = document.getElementById('profile-first-name');
+                    var ln = document.getElementById('profile-last-name');
+                    var up = document.getElementById('profile-username-prefix');
+                    var bio = document.getElementById('profile-bio');
+                    if (fn && tpl.first_name) fn.value = tpl.first_name;
+                    if (ln && tpl.last_name) ln.value = tpl.last_name;
+                    if (up && tpl.username_prefix) up.value = tpl.username_prefix;
+                    if (bio && tpl.bio) bio.value = tpl.bio;
+                }, 500);
+            } catch(e) {}
+        })();
 
 </script>
 
