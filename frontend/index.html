@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>飞机分析V3号机</title>
+    <title>飞机分析1号机</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f1923; color: #e0e0e0; min-height: 100vh; }
@@ -75,7 +75,7 @@
 </head>
 <body>
     <div class="container">
-        <h1>飞机分析V3号机<button onclick="logout()" style="float:right; font-size:13px; padding:6px 14px; border:1px solid #37474f; border-radius:6px; background:#263238; color:#90a4ae; cursor:pointer;">退出登录</button>
+        <h1>飞机分析1号机<button onclick="logout()" style="float:right; font-size:13px; padding:6px 14px; border:1px solid #37474f; border-radius:6px; background:#263238; color:#90a4ae; cursor:pointer;">退出登录</button>
         </h1>
 
         <div class="tabs">
@@ -420,6 +420,7 @@ https://t.me/kuaiyue9
                 </button>
                 <button class="btn btn-primary" onclick="saveProfileTemplate()" style="margin-left:10px;">保存当前资料</button>
                 <button class="btn" onclick="loadProfileTemplate()" style="margin-left:6px;">加载已保存</button>
+                <button class="btn btn-warning" onclick="applySavedProfile()" style="margin-left:6px;">按保存资料更新全部</button>
                 <p style="color:#888; font-size:12px; margin-top:8px;">
                     会把上面填写的资料应用到所有「待设置」的水军号，用户名会自动追加数字保证不冲突。
                 </p>
@@ -2082,6 +2083,24 @@ https://t.me/kuaiyue9
             } catch(e) {}
         })();
 
+
+        async function applySavedProfile() {
+            if (!confirm('确认用已保存的资料更新所有待设置水军的名字、用户名、简介？')) return;
+            var raw = localStorage.getItem('profile_template');
+            if (!raw) { alert('请先保存资料'); return; }
+            var tpl = JSON.parse(raw);
+            try {
+                const r = await fetch(API + '/api/workers/apply-profile', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json', 'X-Auth-Token': localStorage.getItem('token') || ''},
+                    body: JSON.stringify(tpl)
+                });
+                const d = await r.json();
+                alert(d.ok ? ('已更新 ' + (d.updated || 0) + ' 个') : ('失败: ' + d.error));
+                if (d.ok) loadImportStatus();
+            } catch(e) { alert('请求失败'); }
+        }
+
 </script>
 <div id="login-overlay" style="display:none; position:fixed; inset:0; background:rgba(8,15,25,.92); z-index:9999; align-items:center; justify-content:center;">
     <div style="background:#1e2a38; padding:32px; border-radius:12px; width:320px; box-shadow:0 8px 40px rgba(0,0,0,.6);">
@@ -2255,6 +2274,24 @@ https://t.me/kuaiyue9
                 }, 500);
             } catch(e) {}
         })();
+
+
+        async function applySavedProfile() {
+            if (!confirm('确认用已保存的资料更新所有待设置水军的名字、用户名、简介？')) return;
+            var raw = localStorage.getItem('profile_template');
+            if (!raw) { alert('请先保存资料'); return; }
+            var tpl = JSON.parse(raw);
+            try {
+                const r = await fetch(API + '/api/workers/apply-profile', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json', 'X-Auth-Token': localStorage.getItem('token') || ''},
+                    body: JSON.stringify(tpl)
+                });
+                const d = await r.json();
+                alert(d.ok ? ('已更新 ' + (d.updated || 0) + ' 个') : ('失败: ' + d.error));
+                if (d.ok) loadImportStatus();
+            } catch(e) { alert('请求失败'); }
+        }
 
 </script>
 

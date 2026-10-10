@@ -363,8 +363,8 @@ bot_app = None  # Telegram Bot Application
 scheduler_task = None
 manual_send_stopped = False
 SEND_STOP_FLAG = False
-# --- 2号面板：长时间无发送自动续跑 / 上报 ---
-PANEL_NAME = "2号面板"
+# --- 1号面板：长时间无发送自动续跑 / 上报 ---
+PANEL_NAME = "1号面板"
 _STALL_MONITOR_STARTED = False
 _EXIT_SIGNALS_REGISTERED = False
 STALL_MINUTES = 15
@@ -422,7 +422,7 @@ async def check_workers_running_low(worker_configs, interval_min=120):
         except Exception:
             st = {"today": 0, "total": 0}
         msg = (
-            f"【2号面板】水军预计5小时内可能用完\\n"
+            f"【1号面板】水军预计5小时内可能用完\\n"
             f"当前可用水军约: {usable}\\n"
             f"预估5小时需求约: {need_for_5h} 次发送\\n"
             f"保守产能约: {capacity} 次\\n"
@@ -2129,7 +2129,7 @@ async def _auto_reconnect_loop():
 
 
 async def stall_send_monitor():
-    """2号面板：长时间无成功发送则自动重启；重启后仍无成功则上报"""
+    """1号面板：长时间无成功发送则自动重启；重启后仍无成功则上报"""
     global scheduler_task, _last_auto_restart_ts, _stall_alerted_after_restart
     global _last_success_send_ts
     await asyncio.sleep(60)
@@ -2192,7 +2192,7 @@ async def stall_send_monitor():
                 try:
                     st = _today_send_stats()
                     msg = (
-                        f"【2号面板】长时间无发送告警\n"
+                        f"【1号面板】长时间无发送告警\n"
                         f"原因: 自动重启调度后 {STALL_AFTER_RESTART_MINUTES} 分钟仍无成功\n"
                         f"待发目标: {len(pending)}\n"
                         f"今日成功: {st.get('today', 0)} 条\n"
@@ -2314,7 +2314,7 @@ async def _run_send_scheduler_inner():
         logger.info("没有待发送的目标用户")
         try:
             st = _today_send_stats()
-            await send_panel_notify(f"【2号面板】发送停止\n原因: 没有待发送目标\n今日成功: {st['today']} 条\n时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            await send_panel_notify(f"【1号面板】发送停止\n原因: 没有待发送目标\n今日成功: {st['today']} 条\n时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         except Exception:
             pass
         return
@@ -2514,6 +2514,13 @@ async def _run_send_scheduler_inner():
                 es = str(task_err)
                 if "frozen" in es.lower() or "not available" in es.lower():
                     logger.warning("[调度] 冻号导致任务异常，目标保持 pending，换号")
+
+                # 冻号自动删除（不归档）
+                try:
+                    _remove_worker_no_archive(wid, phone)
+                    await log_step(1, "冻号已自动删除", worker_phone=phone, details="不纳入归档", status="warning")
+                except Exception as _e:
+                    logger.warning(f"删除冻号失败: {_e}")
                     success, msg = False, "worker_frozen"
                 else:
                     success, msg = False, f"任务异常: {task_err}"
@@ -2606,7 +2613,7 @@ async def _run_send_scheduler_inner():
     log_activity("调度器完成", f"共发送 {sent_count} 条", status="info")
     try:
         st = _today_send_stats()
-        await send_panel_notify(f"【2号面板】发送任务结束\n原因: 目标用完或达每日上限\n本轮: {sent_count} 条\n今日成功: {st['today']} 条\n时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        await send_panel_notify(f"【1号面板】发送任务结束\n原因: 目标用完或达每日上限\n本轮: {sent_count} 条\n今日成功: {st['today']} 条\n时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     except Exception:
         pass
     try:
@@ -2775,7 +2782,7 @@ async def on_cleanup(app):
 
 
 
-# --- 2号面板：进程退出/重启时尽量上报（SIGTERM，pkill 默认）---
+# --- 1号面板：进程退出/重启时尽量上报（SIGTERM，pkill 默认）---
 _exit_notify_sent = False
 
 def _sync_panel_notify(text_msg: str):
@@ -2812,7 +2819,7 @@ def on_process_signal(signum, frame):
         return
     _exit_notify_sent = True
     try:
-        name = globals().get("PANEL_NAME", "2号面板")
+        name = globals().get("PANEL_NAME", "1号面板")
     except Exception:
         name = "1号面板"
     sig_name = "SIGTERM" if signum == getattr(__import__("signal"), "SIGTERM", 15) else f"signal:{signum}"
@@ -2838,7 +2845,7 @@ def register_exit_signals():
         signal.signal(signal.SIGTERM, on_process_signal)
         signal.signal(signal.SIGINT, on_process_signal)
         globals()['_EXIT_SIGNALS_REGISTERED'] = True
-        logger.info(f"[{globals().get('PANEL_NAME', '2号面板')}] 已注册 SIGTERM/SIGINT 退出上报")
+        logger.info(f"[{globals().get('PANEL_NAME', '1号面板')}] 已注册 SIGTERM/SIGINT 退出上报")
     except Exception as e:
         try:
             logger.warning(f"注册退出信号失败: {e}")
@@ -2881,6 +2888,58 @@ async def api_save_profile_template(request):
     except Exception as e:
         return web.json_response({"ok": False, "error": str(e)}, status=400)
 
+
+@routes.post("/api/workers/apply-profile")
+async def api_apply_profile(request):
+    """用模板更新所有待设置水军的资料字段（名字/用户名前缀/简介）"""
+    try:
+        tpl = await request.json()
+    except Exception:
+        return web.json_response({"ok": False, "error": "无效数据"}, status=400)
+
+    first = (tpl.get("first_name") or "").strip()
+    last = (tpl.get("last_name") or "").strip()
+    prefix = (tpl.get("username_prefix") or "user").strip()
+    bio = tpl.get("bio") or ""
+
+    workers_data = load_json(WORKERS_CONFIG_FILE)
+    workers = workers_data.get("workers", [])
+    updated = 0
+    for i, w in enumerate(workers):
+        if w.get("profile_set"):
+            continue
+        # 名字
+        if first:
+            w["first_name"] = first
+        if last:
+            w["last_name"] = last
+        # 用户名加数字保证唯一
+        w["username"] = f"{prefix}{630 + i}"
+        w["bio"] = bio
+        w["profile_pending"] = True
+        updated += 1
+
+    save_json(WORKERS_CONFIG_FILE, {"workers": workers})
+    return web.json_response({"ok": True, "updated": updated})
+
+
+def _remove_worker_no_archive(worker_id, phone):
+    """删除水军，不归档到 returned"""
+    data = load_json(WORKERS_CONFIG_FILE)
+    workers_list = data.get("workers", [])
+    phone_clean = str(phone).replace("+", "")
+    new_list = [w for w in workers_list if w.get("id") != worker_id and str(w.get("phone","")).replace("+","") != phone_clean]
+    if len(new_list) < len(workers_list):
+        save_json(WORKERS_CONFIG_FILE, {"workers": new_list})
+        logger.info(f"已删除冻号（不归档）: {phone}")
+        # 从内存 workers 字典移除
+        if worker_id in workers:
+            try:
+                # 不断开也行，下次不会再用
+                pass
+            except Exception:
+                pass
+            workers.pop(worker_id, None)
 
 def create_app():
     """创建Web应用"""
@@ -3121,6 +3180,10 @@ async def run_7step_scheduler():
                 target["result"] = "首次验证失败，不再使用"
                 save_json(TARGETS_FILE, {"targets": targets_data["targets"]})
                 await log_step(2, "验证失败", worker_phone=phone, target=target_username, details="首次失败，此用户不再使用", status="error")
+                # 用户名不存在也直接标记失败
+                target["status"] = "failed"
+                target["result"] = "用户名不存在或首次验证失败"
+                save_json(TARGETS_FILE, {"targets": targets_data["targets"]})
                 continue
             await log_step(2, "验证成功", worker_phone=phone, target=target_username, status="success")
         except Exception as e:
@@ -3273,3 +3336,4 @@ PROFILE_TEMPLATE_FILE = DATA_DIR / "profile_template.json"
 async def api_get_profile_template(request):
     data = load_json(PROFILE_TEMPLATE_FILE)
     return web.json_response(data or {})
+
