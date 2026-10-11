@@ -218,6 +218,10 @@
                     <textarea id="targets-input" placeholder="@username1&#10;@username2&#10;username3"></textarea>
                 </div>
                 <button class="btn btn-primary" onclick="addTargets()">批量添加</button>
+                <label class="btn" style="margin-left:8px;cursor:pointer">
+                    📁 上传TXT
+                    <input type="file" id="targets-file" accept=".txt" style="display:none" onchange="uploadTargetsTxt(this)">
+                </label>
             </div>
             <table>
                 <thead><tr><th>用户名</th><th>状态</th><th>Bot</th><th>发送时间</th><th>结果</th><th>操作</th></tr></thead>
@@ -869,6 +873,37 @@ https://t.me/kuaiyue9
             document.getElementById('targets-input').value = '';
             loadTargets();
         }
+
+        async function uploadTargetsTxt(input) {
+            var file = input.files[0];
+            if (!file) return;
+            if (!file.name.toLowerCase().endsWith('.txt')) {
+                alert('请选择 .txt 文件');
+                input.value = '';
+                return;
+            }
+            var reader = new FileReader();
+            reader.onload = async function(e) {
+                var content = e.target.result;
+                var lines = content.split(/\r?\n/).map(function(s){return s.trim();}).filter(function(s){return s;});
+                if (!lines.length) {
+                    alert('文件为空');
+                    input.value = '';
+                    return;
+                }
+                // 把内容填入文本框并自动提交
+                document.getElementById('targets-input').value = lines.join('\n');
+                await addTargets();
+                input.value = '';
+                alert('已从 TXT 导入 ' + lines.length + ' 个用户名');
+            };
+            reader.onerror = function() {
+                alert('读取文件失败');
+                input.value = '';
+            };
+            reader.readAsText(file, 'UTF-8');
+        }
+
 
         async function deleteAllTargets() {
             if (!confirm("确定要删除所有目标用户吗？此操作不可恢复！")) return;
