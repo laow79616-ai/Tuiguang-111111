@@ -301,7 +301,12 @@ class ShareWorker:
             except asyncio.TimeoutError:
                 logger.error(f"[Worker-{self.worker_id}] ⏰ 搜索用户超时(30s): @{username}")
                 self._connected = False
+                self.last_error = "搜索超时"
                 raise
+            except Exception as e:
+                self.last_error = str(e)
+                logger.error(f"[Worker-{self.worker_id}] 搜索异常: {e}")
+                return None, False
 
             if not (result and result.peer):
                 try:

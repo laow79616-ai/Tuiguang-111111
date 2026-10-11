@@ -486,7 +486,7 @@ def log_activity(action, details="", worker_phone="", target="", status="info"):
         activity_log = activity_log[-MAX_ACTIVITY_LOG:]
 
 connected_count = 0
-MAX_CONCURRENT_CONNECTIONS = 20
+MAX_CONCURRENT_CONNECTIONS = 30
 CONNECTION_INTERVAL = 10  # 秒
 MEMORY_THRESHOLD = 80  # %
 
@@ -1954,7 +1954,15 @@ async def run_7step_scheduler():
                 await log_step(0, "无待处理目标", status="info")
                 await asyncio.sleep(10)
                 continue
-            worker_cfg, gi = pick_worker_group_rr(workers_list, proxies)
+            # 过滤掉冷却中的水军
+            available_workers = []
+            for wc in workers_list:
+                wid = wc.get("id")
+                w = workers.get(wid)
+                if w and hasattr(w, "is_in_cooldown") and w.is_in_cooldown():
+                    continue
+                available_workers.append(wc)
+            worker_cfg, gi = pick_worker_group_rr(available_workers or workers_list, proxies)
             if not worker_cfg:
                 await log_step(1, "无可用水军", status="warning")
                 await asyncio.sleep(5)
@@ -1970,12 +1978,21 @@ async def run_7step_scheduler():
                     api_hash = config.get("api_hash")
                     worker = ShareWorker(worker_cfg, api_id, api_hash)
                     workers[wid] = worker
+                    # 检查是否已达最大在线数
+                    connected_now = sum(1 for w in workers.values() if getattr(w, "_connected", False))
+                    if connected_now >= MAX_CONCURRENT_CONNECTIONS:
+                        await log_step(1, "已达最大在线数", worker_phone=phone, details=f"{connected_now}/{MAX_CONCURRENT_CONNECTIONS}", status="warning")
+                        continue
                     await worker.ensure_connected()
                     await log_step(1, "自动连接水军", worker_phone=phone, status="info")
                 except Exception as e:
                     await log_step(1, "水军连接失败", worker_phone=phone, details=str(e), status="error")
                     continue
-            elif not getattr(worker, "_connected", False):
+            # 冷却中的水军直接跳过
+            if hasattr(worker, "is_in_cooldown") and worker.is_in_cooldown():
+                await log_step(1, "水军冷却中跳过", worker_phone=phone, status="warning")
+                continue
+            if not getattr(worker, "_connected", False):
                 try:
                     await worker.ensure_connected()
                     await log_step(1, "重新连接水军", worker_phone=phone, status="info")
@@ -1988,10 +2005,33 @@ async def run_7step_scheduler():
             try:
                 user_entity, matched = await asyncio.wait_for(worker.search_user(target_username), timeout=30)
                 if not (matched and user_entity):
-                    target["status"] = "failed"
-                    target["result"] = "首次验证失败，不再使用"
-                    save_json(TARGETS_FILE, {"targets": targets_data.get("targets", targets)})
-                    await log_step(2, "验证失败", worker_phone=phone, target=target_username, details="首次失败，此用户不再使用", status="error")
+                    # 区分失败原因
+                    err = getattr(worker, "last_error", "") or ""
+                    err_lower = err.lower()
+                    if "不存在" in err or "usernamenotoccupied" in err_lower or "deleted" in err_lower or "deactivated" in err_lower:
+                        # 用户明确不存在
+                        # 用户明确不存在 → 标 failed
+                        target["status"] = "failed"
+                        target["result"] = "用户不存在，不再使用"
+                        save_json(TARGETS_FILE, {"targets": targets_data.get("targets", targets)})
+                        await log_step(2, "用户不存在", worker_phone=phone, target=target_username, details="确认不存在，标failed", status="error")
+                    else:
+                        # FloodWait / 网络 / 代理问题 → 按实际时长冷却，目标移到末尾
+                        import re
+                        wait_sec = 300
+                        m = re.search(r"wait of (\d+) seconds", err)
+                        if m:
+                            wait_sec = int(m.group(1))  # 完全按平台要求
+                        await log_step(2, "搜索异常(换水军)", worker_phone=phone, target=target_username, details=f"水军侧问题: {err[:50]}，冷却{wait_sec}s，目标移末尾", status="warning")
+                        if hasattr(worker, "enter_cooldown"):
+                            worker.enter_cooldown(wait_sec)
+                        # 目标移到末尾，避免连续打同一个
+                        try:
+                            targets.remove(target)
+                            targets.append(target)
+                            save_json(TARGETS_FILE, {"targets": targets})
+                        except Exception:
+                            pass
                     continue
                 await log_step(2, "验证成功", worker_phone=phone, target=target_username, status="success")
             except Exception as e:
@@ -2132,7 +2172,15 @@ async def run_7step_scheduler():
                 await log_step(0, "无待处理目标", status="info")
                 await asyncio.sleep(10)
                 continue
-            worker_cfg, gi = pick_worker_group_rr(workers_list, proxies)
+            # 过滤掉冷却中的水军
+            available_workers = []
+            for wc in workers_list:
+                wid = wc.get("id")
+                w = workers.get(wid)
+                if w and hasattr(w, "is_in_cooldown") and w.is_in_cooldown():
+                    continue
+                available_workers.append(wc)
+            worker_cfg, gi = pick_worker_group_rr(available_workers or workers_list, proxies)
             if not worker_cfg:
                 await log_step(1, "无可用水军", status="warning")
                 await asyncio.sleep(5)
@@ -2148,12 +2196,21 @@ async def run_7step_scheduler():
                     api_hash = config.get("api_hash")
                     worker = ShareWorker(worker_cfg, api_id, api_hash)
                     workers[wid] = worker
+                    # 检查是否已达最大在线数
+                    connected_now = sum(1 for w in workers.values() if getattr(w, "_connected", False))
+                    if connected_now >= MAX_CONCURRENT_CONNECTIONS:
+                        await log_step(1, "已达最大在线数", worker_phone=phone, details=f"{connected_now}/{MAX_CONCURRENT_CONNECTIONS}", status="warning")
+                        continue
                     await worker.ensure_connected()
                     await log_step(1, "自动连接水军", worker_phone=phone, status="info")
                 except Exception as e:
                     await log_step(1, "水军连接失败", worker_phone=phone, details=str(e), status="error")
                     continue
-            elif not getattr(worker, "_connected", False):
+            # 冷却中的水军直接跳过
+            if hasattr(worker, "is_in_cooldown") and worker.is_in_cooldown():
+                await log_step(1, "水军冷却中跳过", worker_phone=phone, status="warning")
+                continue
+            if not getattr(worker, "_connected", False):
                 try:
                     await worker.ensure_connected()
                     await log_step(1, "重新连接水军", worker_phone=phone, status="info")
@@ -2166,10 +2223,33 @@ async def run_7step_scheduler():
             try:
                 user_entity, matched = await asyncio.wait_for(worker.search_user(target_username), timeout=30)
                 if not (matched and user_entity):
-                    target["status"] = "failed"
-                    target["result"] = "首次验证失败，不再使用"
-                    save_json(TARGETS_FILE, {"targets": targets_data.get("targets", targets)})
-                    await log_step(2, "验证失败", worker_phone=phone, target=target_username, details="首次失败，此用户不再使用", status="error")
+                    # 区分失败原因
+                    err = getattr(worker, "last_error", "") or ""
+                    err_lower = err.lower()
+                    if "不存在" in err or "usernamenotoccupied" in err_lower or "deleted" in err_lower or "deactivated" in err_lower:
+                        # 用户明确不存在
+                        # 用户明确不存在 → 标 failed
+                        target["status"] = "failed"
+                        target["result"] = "用户不存在，不再使用"
+                        save_json(TARGETS_FILE, {"targets": targets_data.get("targets", targets)})
+                        await log_step(2, "用户不存在", worker_phone=phone, target=target_username, details="确认不存在，标failed", status="error")
+                    else:
+                        # FloodWait / 网络 / 代理问题 → 按实际时长冷却，目标移到末尾
+                        import re
+                        wait_sec = 300
+                        m = re.search(r"wait of (\d+) seconds", err)
+                        if m:
+                            wait_sec = int(m.group(1))  # 完全按平台要求
+                        await log_step(2, "搜索异常(换水军)", worker_phone=phone, target=target_username, details=f"水军侧问题: {err[:50]}，冷却{wait_sec}s，目标移末尾", status="warning")
+                        if hasattr(worker, "enter_cooldown"):
+                            worker.enter_cooldown(wait_sec)
+                        # 目标移到末尾，避免连续打同一个
+                        try:
+                            targets.remove(target)
+                            targets.append(target)
+                            save_json(TARGETS_FILE, {"targets": targets})
+                        except Exception:
+                            pass
                     continue
                 await log_step(2, "验证成功", worker_phone=phone, target=target_username, status="success")
             except Exception as e:
