@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>飞机分析1号机</title>
+    <title>飞机分析V2号机</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f1923; color: #e0e0e0; min-height: 100vh; }
@@ -75,7 +75,7 @@
 </head>
 <body>
     <div class="container">
-        <h1>飞机分析1号机<button onclick="logout()" style="float:right; font-size:13px; padding:6px 14px; border:1px solid #37474f; border-radius:6px; background:#263238; color:#90a4ae; cursor:pointer;">退出登录</button>
+        <h1>飞机分析V2号机<button onclick="logout()" style="float:right; font-size:13px; padding:6px 14px; border:1px solid #37474f; border-radius:6px; background:#263238; color:#90a4ae; cursor:pointer;">退出登录</button>
         </h1>
 
         <div class="tabs">
@@ -107,6 +107,14 @@
                     <div class="stat-label">在线水军/总数</div>
                 </div>
                 <div class="stat-card">
+                    <div class="stat-value" id="stat-health" style="color:#4caf50">0/0</div>
+                    <div class="stat-label">健康号/总数</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-limited" style="color:#ff9800">0</div>
+                    <div class="stat-label">有限流记录</div>
+                </div>
+                <div class="stat-card">
                     <div class="stat-value" id="stat-today">0</div>
                     <div class="stat-label">今日发送</div>
                 </div>
@@ -131,19 +139,19 @@
             <div id="workflow-panel" class="card" style="max-height:400px;overflow-y:auto;">
                 <div class="flex-between mb-10">
                     <span style="color:#4fc3f7;font-weight:bold;">📋 工作流实时日志</span>
-                    <span id="workflow-current" style="color:#aaa;font-size:12px;"></span>
+                    <span id="workflow-current" style="color:#aaa;font-size:13px;"></span>
                 </div>
                 <div id="workflow-current-activity" style="background:#1a2332;padding:10px;border-radius:6px;margin-bottom:10px;display:none;">
                     <div style="display:flex;align-items:center;gap:10px;">
                         <span class="spinner" style="width:14px;height:14px;border:2px solid #4fc3f7;border-top-color:transparent;border-radius:50%;animation:spin 1s linear infinite;display:inline-block;"></span>
-                        <span id="workflow-step" style="color:#fff;font-size:13px;"></span>
+                        <span id="workflow-step" style="color:#fff;font-size:16px;"></span>
                     </div>
-                    <div style="margin-top:6px;font-size:12px;color:#aaa;">
+                    <div style="margin-top:6px;font-size:13px;color:#aaa;">
                         <span>水军：<span id="workflow-worker" style="color:#66bb6a;"></span></span>
                         <span style="margin-left:15px;">目标：<span id="workflow-target" style="color:#ffa726;"></span></span>
                     </div>
                 </div>
-                <div id="workflow-logs" style="font-size:12px;line-height:1.8;"></div>
+                <div id="workflow-logs" style="font-size:16px;line-height:1.9;"></div>
             </div>
             <style>
                 @keyframes spin { to { transform: rotate(360deg); } }
@@ -506,6 +514,23 @@ https://t.me/kuaiyue9
         </div>
 
     <script>
+
+function translateError(err) {
+    if (!err) return '';
+    var e = String(err);
+    if (e.includes('not available for frozen') || e.toLowerCase().includes('frozen account')) return '账号已冻结（平台冻结，方法不可用）';
+    if (e.includes('A wait of') && e.includes('seconds is required')) return 'FloodWait 冷却中（平台限流）';
+    if (e.includes('The username is not in use') || e.includes('UsernameNotOccupied')) return '目标用户名不存在';
+    if (e.includes('ResolveUsernameRequest')) return '目标用户名解析失败';
+    if (e.includes('SearchRequest')) return '搜索被限流';
+    if (e.includes('FloodWait') || e.includes('wait of')) return 'FloodWait 冷却中';
+    if (e.includes('Too many requests')) return '请求过多，已限流';
+    if (e.includes('AuthKeyUnregistered')) return '登录失效，需重新登录';
+    if (e.includes('UserDeactivated')) return '账号已注销';
+    if (e.includes('PhoneNumberBanned')) return '手机号已被封禁';
+    return e;
+}
+
         const API = '';
 
         // === 鉴权: 包装 fetch 自动附带 token, 401 时弹出登录 ===
@@ -578,6 +603,8 @@ https://t.me/kuaiyue9
                 document.getElementById('stat-memory').textContent = d.memory_percent + '%';
                 document.getElementById('stat-cpu').textContent = d.cpu_percent + '%';
                 document.getElementById('stat-workers').textContent = d.workers_connected + '/' + d.workers_total;
+                document.getElementById('stat-health').textContent = (d.healthy_count || 0) + '/' + d.workers_total + ' (' + (d.health_percent || 0) + '%)';
+                document.getElementById('stat-limited').textContent = (d.limited_count || 0) + ' (' + Math.round((d.limited_count || 0) / Math.max(d.workers_total, 1) * 100) + '%)';
                 document.getElementById('stat-today').textContent = d.today_sends;
                 document.getElementById('stat-total').textContent = d.total_sends;
 
@@ -674,8 +701,8 @@ https://t.me/kuaiyue9
                 <div class="card" style="${w.is_restricted ? 'border-left:3px solid #ff4444;' : w.in_cooldown ? 'border-left:3px solid #ffaa00;' : ''}">
                     <div class="flex-between">
                         <div>
-                            <strong>${w.phone}</strong>
-                            <span class="badge ${w.connected ? 'badge-green' : 'badge-red'}">${w.connected ? '在线' : '离线'}</span>
+                            <strong>${w.phone}${(w.is_restricted || w.is_dead || w.is_frozen) ? ' <span class="badge badge-red">已限制</span>' : (w.schedulable === false ? '' : '')}</strong>
+                            <span class="badge ${w.connected ? 'badge-green' : 'badge-red'}">${w.in_cooldown ? '冷却' : (w.in_cooldown ? '冷却' : (w.connected ? '在线' : '离线'))}</span>
                             <span class="badge badge-blue">${w.runtime_status || w.status}</span>
                             ${w.is_restricted ? '<span class="badge" style="background:#ff4444;color:#fff">⚠️已限制</span>' : ''}
                             ${w.in_cooldown ? '<span class="badge" style="background:#ffaa00;color:#000">⏸冷却' + w.cooldown_remaining + 's</span>' : ''}
@@ -689,22 +716,22 @@ https://t.me/kuaiyue9
                         </div>
                     </div>
                     ${w.is_restricted ? `<div class="text-red" style="margin-top:6px;font-size:12px">⚠️ 限制原因: ${w.restricted_reason} (${w.restricted_at})</div>` : ''}
-                    ${w.last_error ? `<div class="text-red" style="margin-top:6px;font-size:12px">错误: ${w.last_error}</div>` : ''}
-                    ${w.restriction_count > 0 ? `<div style="margin-top:6px;font-size:12px;color:${w.restriction_count >= 7 ? '#ff1744' : w.restriction_count >= 4 ? '#ff9800' : '#ffc107'};">⚠️ 已被限制 ${w.restriction_count} 次${w.restriction_count >= 7 ? ' (即将自动删除)' : ''}</div>` : ''}
+                    ${w.last_error ? `<div class="text-red" style="margin-top:6px;font-size:12px">错误: ${translateError(w.last_error)}</div>` : ''}
+                    ${w.restriction_count > 0 ? `<div style="margin-top:6px;font-size:12px;color:${w.in_cooldown ? '#ffaa00' : (w.is_restricted ? '#ff1744' : '#8bc34a')};">${w.in_cooldown ? '冷却中' : (w.is_restricted ? '已限制' : '历史限制')} ${w.restriction_count} 次${w.schedulable ? '（可调度）' : ''}</div>` : ''}
                     ${w.daily_sends ? `<div class="text-gray" style="margin-top:4px;font-size:12px">今日发送: ${w.daily_sends}</div>` : ''}
                 </div>
             `).join('');
-            const online = workers.filter(w => w.connected).length;
-            const idle = workers.filter(w => w.runtime_status === "idle").length;
-            const cooldown = workers.filter(w => w.in_cooldown).length;
-            const offline = workers.filter(w => !w.connected).length;
+            const online = workers.filter(w => w.connected && !w.in_cooldown).length;
+            const 空闲 = workers.filter(w => w.runtime_status === "空闲" || w.runtime_status === "idle").length;
+            const 冷却中 = workers.filter(w => w.in_cooldown).length;
+            const 离线 = workers.filter(w => !w.connected).length;
             const high_risk = workers.filter(w => w.restriction_count >= 7).length;
             const statsHtml = `<div class="card" style="margin-bottom:15px;padding:10px 20px;background:#0a1520;">
                 <span style="margin-right:20px;">总计: <strong style="color:#4fc3f7;">${workers.length}</strong> 个</span>
                 <span style="margin-right:20px;">在线: <strong style="color:#4caf50;">${online}</strong></span>
-                <span style="margin-right:20px;">空闲: <strong style="color:#2196f3;">${idle}</strong></span>
-                <span style="margin-right:20px;">冷却: <strong style="color:#ff9800;">${cooldown}</strong></span>
-                <span style="margin-right:20px;">离线: <strong style="color:#f44336;">${offline}</strong></span>
+                <span style="margin-right:20px;">空闲: <strong style="color:#2196f3;">${空闲}</strong></span>
+                <span style="margin-right:20px;">冷却: <strong style="color:#ff9800;">${冷却中}</strong></span>
+                <span style="margin-right:20px;">离线: <strong style="color:#f44336;">${离线}</strong></span>
                 
             </div>`;
             document.getElementById('workers-list').innerHTML = statsHtml + (html || '<div class="text-gray">暂无水军号</div>');
@@ -1416,7 +1443,7 @@ https://t.me/kuaiyue9
                 tbody.innerHTML = data.workers.map((w, i) => `
                     <tr>
                         <td>${i+1}</td>
-                        <td>${w.phone}</td>
+                        <td>${w.phone}${(w.is_restricted || w.is_dead || w.is_frozen) ? ' <span class="badge badge-red">已限制</span>' : (w.schedulable === false ? '' : '')}</td>
                         <td>${w.display_name || '-'}</td>
                         <td style="color:#4fc3f7;">@${w.target_username || '-'}</td>
                         <td>${w.avatar_file ? '&#x2705;' : '&#x274c;'}</td>
@@ -1684,9 +1711,10 @@ https://t.me/kuaiyue9
             var border = w.is_restricted ? 'border-left:3px solid #ff4444;' : (w.in_cooldown ? 'border-left:3px solid #ffaa00;' : '');
             var html = '<div class="card" style="' + border + '"><div class="flex-between"><div>';
             html += '<strong>' + (w.phone || '') + '</strong> ';
-            html += '<span class="badge ' + (w.connected ? 'badge-green' : 'badge-red') + '">' + (w.connected ? '在线' : '离线') + '</span> ';
+            html += '<span class="badge ' + (w.connected ? 'badge-green' : 'badge-red') + '">' + (w.in_cooldown ? '冷却' : (w.connected ? '在线' : '离线')) + '</span> ';
             html += '<span class="badge badge-blue">' + (w.runtime_status || w.status || '') + '</span>';
             if (w.is_restricted) html += ' <span class="badge" style="background:#ff4444;color:#fff">已限制</span>';
+            if (w.last_error || w.restricted_reason) html += ' <span style="color:#ff6666;font-size:12px">' + translateError(w.last_error || w.restricted_reason || '') + '</span>';
             if (w.in_cooldown) html += ' <span class="badge" style="background:#ffaa00;color:#000">冷却' + w.cooldown_remaining + 's</span>';
             html += '</div><div class="flex">';
             html += '<button class="btn btn-sm btn-primary" onclick="connectWorker(\'' + w.id + '\')">连接</button> ';
@@ -1694,8 +1722,22 @@ https://t.me/kuaiyue9
             html += '<button class="btn btn-sm btn-warning" onclick="inputCode(\'' + w.id + '\', \'' + w.phone + '\')">输入验证码</button> ';
             html += '<button class="btn btn-sm btn-danger" onclick="deleteWorker(\'' + w.id + '\')">删除</button>';
             html += '</div></div>';
-            if (w.is_restricted) html += '<div class="text-red" style="margin-top:6px;font-size:12px">限制原因: ' + (w.restricted_reason || '') + '</div>';
-            if (w.last_error) html += '<div class="text-red" style="margin-top:6px;font-size:12px">错误: ' + w.last_error + '</div>';
+            if (w.in_cooldown && w.cooldown_remaining > 0) {
+                var rem = w.cooldown_remaining;
+                var h = Math.floor(rem / 3600), m = Math.floor((rem % 3600) / 60), s = rem % 60;
+                var cdTxt = (h ? h + '小时' : '') + (m ? m + '分' : '') + s + '秒';
+                html += '<div style="margin-top:6px;font-size:12px;color:#ffaa00">冷却倒计时: ' + cdTxt + '</div>';
+            }
+            if (w.restricted_reason) html += '<div class="text-red" style="margin-top:6px;font-size:12px">限制原因: ' + translateError(w.restricted_reason) + '</div>';
+            else if (w.is_restricted) html += '<div class="text-red" style="margin-top:6px;font-size:12px">限制原因: 已限制</div>';
+            if (w.last_error) html += '<div class="text-red" style="margin-top:6px;font-size:12px">错误: ' + translateError(w.last_error) + '</div>';
+            if (w.skip_auto_connect || w.marked_restricted_or_cooldown || w.restriction_total > 0) {
+                var txt = '已限制';
+                if (w.restriction_total) txt += ' ' + w.restriction_total + '次';
+                html += ' <span class="badge badge-red" style="margin-left:6px">' + txt + '</span>';
+                if (w.restriction_count) html += ' ' + w.restriction_count + '次';
+                html += '</span>';
+            }
             if (w.restriction_count) html += '<div style="margin-top:6px;font-size:12px">已被限制 ' + w.restriction_count + ' 次</div>';
             if (w.daily_sends) html += '<div class="text-gray" style="margin-top:4px;font-size:12px">今日发送: ' + w.daily_sends + '</div>';
             html += '</div>';
@@ -1728,6 +1770,7 @@ https://t.me/kuaiyue9
         }
         function selectWorkerGroup(id) {
             window._selectedWorkerGroup = id;
+            document.querySelectorAll('#worker-group-list .group-item').forEach(function(el){ el.classList.remove('active'); });
             paintWorkerGroups();
         }
 
@@ -1790,18 +1833,18 @@ https://t.me/kuaiyue9
             var pdata = await pr.json();
             window._allWorkers = workers;
             window._allProxies = Array.isArray(pdata) ? pdata : (pdata.proxies || []);
-            var online = workers.filter(function (w) { return w.connected; }).length;
-            var idle = workers.filter(function (w) { return w.runtime_status === 'idle'; }).length;
-            var cooldown = workers.filter(function (w) { return w.in_cooldown; }).length;
-            var offline = workers.filter(function (w) { return !w.connected; }).length;
+            var online = workers.filter(function (w) { return w.connected && !w.in_cooldown; }).length;
+            var 空闲 = workers.filter(function (w) { return w.runtime_status === '空闲'; }).length;
+            var 冷却中 = workers.filter(function (w) { return w.in_cooldown; }).length;
+            var 离线 = workers.filter(function (w) { return !w.connected; }).length;
             var stats = document.getElementById('workers-stats');
             if (stats) {
                 stats.innerHTML = '<div class="card" style="margin-bottom:15px;padding:10px 20px;background:#0a1520;">'
                     + '<span style="margin-right:20px;">总计: <strong style="color:#4fc3f7;">' + workers.length + '</strong></span>'
                     + '<span style="margin-right:20px;">在线: <strong style="color:#4caf50;">' + online + '</strong></span>'
-                    + '<span style="margin-right:20px;">空闲: <strong style="color:#2196f3;">' + idle + '</strong></span>'
-                    + '<span style="margin-right:20px;">冷却: <strong style="color:#ff9800;">' + cooldown + '</strong></span>'
-                    + '<span style="margin-right:20px;">离线: <strong style="color:#f44336;">' + offline + '</strong></span></div>';
+                    + '<span style="margin-right:20px;">空闲: <strong style="color:#2196f3;">' + 空闲 + '</strong></span>'
+                    + '<span style="margin-right:20px;">冷却: <strong style="color:#ff9800;">' + 冷却中 + '</strong></span>'
+                    + '<span style="margin-right:20px;">离线: <strong style="color:#f44336;">' + 离线 + '</strong></span></div>';
             }
             paintWorkerGroups();
         }
@@ -1972,6 +2015,28 @@ https://t.me/kuaiyue9
         }
 
         
+
+        async function batchAddApis() {
+            var ta = document.getElementById('batch-api-text');
+            var text = ta ? ta.value.trim() : '';
+            if (!text) { alert('请先粘贴 API 列表'); return; }
+            try {
+                var r = await fetch(API + '/api/api-configs/batch', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json', 'X-Auth-Token': localStorage.getItem('token') || ''},
+                    body: JSON.stringify({text: text})
+                });
+                var d = {};
+                try { d = await r.json(); } catch(e) {}
+                if (!r.ok || d.success === false) { alert('填充失败: ' + (d.error || r.status)); return; }
+                if (ta) ta.value = '';
+                if (window.loadApiConfigs) try { await loadApiConfigs(); } catch(e) {}
+                alert('已添加 ' + (d.added || 0) + ' 条，当前共 ' + (d.total || 0) + ' 条');
+            } catch (e) {
+                alert('填充出错: ' + e.message);
+            }
+        }
+
         async function loadApiConfigs() {
             var r = await fetch(API + '/api/api-configs');
             var d = await r.json();

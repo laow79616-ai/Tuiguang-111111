@@ -173,8 +173,15 @@ async def api_batch_add_api_configs(request):
                 line = line.strip()
                 if not line:
                     continue
-                parts = line.replace("|", ",").replace("\t", ",").split(",")
-                if len(parts) >= 2:
+                # 支持 api_id|api_hash 、逗号、以及 api_id-api_hash（横线，hash 为十六进制）
+                if "|" in line or "," in line or "\t" in line:
+                    parts = line.replace("|", ",").replace("\t", ",").split(",")
+                elif "-" in line:
+                    a, b = line.split("-", 1)
+                    parts = [a, b]
+                else:
+                    parts = [line]
+                if len(parts) >= 2 and parts[0].strip().isdigit() and len(parts[1].strip()) >= 16:
                     items.append({
                         "api_id": parts[0].strip(),
                         "api_hash": parts[1].strip(),
@@ -240,6 +247,31 @@ async def api_auto_assign_apis(request):
     
     workers_data["workers"] = workers
     save_json(workers_file, workers_data)
+    # 按每组10个均匀分配水军到IP线路（固定每组最多10个，不串换）
+    try:
+        from app import proxy_pool, IP_LINE_MAX_WORKERS
+        proxies = proxy_pool.get_all()
+        workers = workers_data.get("workers", [])
+        unbound = [w for w in workers if not w.get("proxy_id") and not w.get("bound_proxy_id")]
+        if unbound and proxies:
+            active_proxies = [px for px in proxies if px.get("status", "active") != "disabled"][:30]
+            for i, w in enumerate(unbound):
+                if not active_proxies:
+                    break
+                px = active_proxies[i % len(active_proxies)]
+                assigned = list(px.get("assigned_bots") or [])
+                if len(assigned) >= IP_LINE_MAX_WORKERS:
+                    continue
+                assigned.append(w["id"])
+                px["assigned_bots"] = assigned
+                w["proxy_id"] = px.get("id")
+                w["bound_proxy_id"] = px.get("id")
+                w["group_no"] = (i % len(active_proxies)) + 1
+            proxy_pool.save()
+            save_json(workers_file, workers_data)
+    except Exception as e:
+        print(f"[导入] 分组分配失败: {e}")
+
     
     # 更新统计
     for cfg in api_configs:
@@ -412,10 +444,21 @@ async def api_batch_import_workers(request):
             use_api_id = pair["api_id"]
             use_api_hash = pair["api_hash"]
         
-        # 生成名字和用户名
-        display_name = get_available_name() + "-快约到家欢迎您"
+        # 生成名字和用户名：优先用手动保存的资料模板
+        tpl_file = DATA_DIR / "profile_template.json"
+        tpl = {}
+        if tpl_file.exists():
+            try:
+                tpl = json.loads(tpl_file.read_text(encoding="utf-8"))
+            except Exception:
+                tpl = {}
+        fn = (tpl.get("first_name") or "").strip() or get_available_name()
+        ln = (tpl.get("last_name") or "").strip()
+        display_name = fn + ((" " + ln) if ln else "")
         username_num = get_next_username_number()
-        target_username = f"kuaiyue{username_num}"
+        prefix = (tpl.get("username_prefix") or "").strip() or "kuaiyue"
+        target_username = f"{prefix}{username_num}"
+        use_bio = (tpl.get("bio") or "").strip() or DEFAULT_BIO
         
         # 分配头像
         avatar_file = get_unused_avatar()
@@ -434,8 +477,11 @@ async def api_batch_import_workers(request):
             "bot_username": "",
             "bot_token": "",
             "display_name": display_name,
+            "first_name": fn,
+            "last_name": ln,
             "target_username": target_username,
-            "target_bio": DEFAULT_BIO,
+            "target_bio": use_bio,
+            "bio": use_bio,
             "avatar_file": avatar_file or "",
             "profile_set": False,  # 资料是否已设置
             "created_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
@@ -452,7 +498,39 @@ async def api_batch_import_workers(request):
     
     # 保存
     save_json(workers_file, workers_data)
-    
+
+    # 新导入的号均匀分配到各代理（round-robin）
+    try:
+        import json as _json
+        proxy_file = DATA_DIR / "proxy_pool.json"
+        if proxy_file.exists() and imported:
+            pd = _json.loads(proxy_file.read_text(encoding="utf-8"))
+            proxies = [p for p in pd.get("proxies", []) if p.get("status", "active") != "disabled"]
+            new_phones = {x["phone"] for x in imported}
+            unbound = [w for w in workers_data.get("workers", []) if w.get("phone") in new_phones and not w.get("proxy_id")]
+            if proxies and unbound:
+                # 补到当前人最少的线路，保持均匀
+                def line_count(px):
+                    return len(px.get("assigned_worker_phones") or [])
+                for w in unbound:
+                    px = min(proxies, key=line_count)
+                    gi = proxies.index(px)
+                    bots = list(px.get("assigned_bots") or [])
+                    phones = list(px.get("assigned_worker_phones") or [])
+                    if w["id"] not in bots:
+                        bots.append(w["id"])
+                    if w.get("phone") and w["phone"] not in phones:
+                        phones.append(w["phone"])
+                    px["assigned_bots"] = bots
+                    px["assigned_worker_phones"] = phones
+                    w["proxy_id"] = px.get("id")
+                    w["bound_proxy_id"] = px.get("id")
+                    w["group_no"] = gi + 1
+                proxy_file.write_text(_json.dumps(pd, ensure_ascii=False, indent=2), encoding="utf-8")
+                save_json(workers_file, workers_data)
+    except Exception as e:
+        logger.warning(f"[导入] 自动分配代理失败: {e}")
+
     # 清理临时文件
     shutil.rmtree(extract_dir, ignore_errors=True)
     

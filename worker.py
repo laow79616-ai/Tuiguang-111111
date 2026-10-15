@@ -78,6 +78,9 @@ class ShareWorker:
         self._connected = False
         self.daily_sends = 0
         self.last_error = ""
+        self._log_callback = None  # 日志回调
+        # 从配置恢复冷却时间
+        self.cooldown_until = float(worker_config.get("cooldown_until") or 0)
         # 限制标记
         self.is_restricted = worker_config.get("is_restricted", False)
         self.restricted_at = None
@@ -94,6 +97,13 @@ class ShareWorker:
         self._on_dead_detected = None  # 回调: 检测到账号死亡时通知外部自动删除
         # 当前使用的Bot用户名（用于标记Bot限制）
         self.current_bot_username = ""
+    def _log_step(self, step, action, target=""):
+        if self._log_callback:
+            try:
+                self._log_callback(step, action, self.phone, target)
+            except:
+                pass
+        logger.info(f"[Worker-{self.worker_id}] 步骤{step}: {action}")
 
     def _get_proxy_tuple(self):
         """转换代理配置为Telethon格式（兼容python-socks）"""
@@ -154,6 +164,15 @@ class ShareWorker:
         )
 
         await self.client.connect()
+        # SQLite WAL + busy_timeout，减少 database is locked
+        try:
+            _conn = getattr(getattr(self.client, "session", None), "_conn", None)
+            if _conn is not None:
+                _conn.execute("PRAGMA journal_mode=WAL")
+                _conn.execute("PRAGMA busy_timeout=30000")
+                _conn.commit()
+        except Exception:
+            pass
 
         if not await self.client.is_user_authorized():
             logger.error(f"[Worker-{self.worker_id}] ☠️ 水军号 {self.phone} 未登录(session失效/账号被封)")
@@ -223,6 +242,15 @@ class ShareWorker:
         # 如果已死/已被永久限制，不做任何处理
         if self.is_dead:
             return
+        # 进入冷却时自动断开连接
+        try:
+            if hasattr(self, "disconnect"):
+                # 注意：这里是同步上下文，真正断开放在调用方 await
+                self.needs_disconnect = True
+            elif getattr(self, "client", None):
+                self.needs_disconnect = True
+        except Exception:
+            pass
         # 增加限制计数
         self.rate_limit_count += 1
         logger.warning(f"[Worker-{self.worker_id}] 分享失败第 {self.rate_limit_count} 次")
@@ -248,6 +276,43 @@ class ShareWorker:
             return
         # 第1-3次: 按等待时长进入冷却
         self.cooldown_until = time.time() + wait_time
+        if not self.restricted_reason:
+            self.restricted_reason = f"平台限流，冷却 {int(wait_time)} 秒（第{self.rate_limit_count}次）"
+        self.last_error = self.restricted_reason
+        # 持久化冷却到配置
+        try:
+            import json
+            from pathlib import Path
+            cfg = Path(__file__).resolve().parent / "data" / "workers_config.json"
+            if cfg.exists():
+                d = json.loads(cfg.read_text(encoding="utf-8"))
+                for w in d.get("workers", []):
+                    if w.get("phone") == self.phone:
+                        w["cooldown_until"] = self.cooldown_until
+                        break
+                cfg.write_text(json.dumps(d, ensure_ascii=False, indent=2), encoding="utf-8")
+        except Exception:
+            pass
+        # 直接持久化到配置
+        try:
+            import json
+            from pathlib import Path
+            cfg = Path(__file__).parent / "data" / "workers_config.json"
+            if cfg.exists():
+                d = json.loads(cfg.read_text(encoding="utf-8"))
+                for ww in d.get("workers", []):
+                    if ww.get("id") == self.worker_id:
+                        ww["cooldown_until"] = self.cooldown_until
+                        break
+                cfg.write_text(json.dumps(d, ensure_ascii=False, indent=2), encoding="utf-8")
+        except Exception:
+            pass
+        # 持久化冷却时间
+        if hasattr(self, "_persist_cooldown") and self._persist_cooldown:
+            try:
+                self._persist_cooldown(self.worker_id, self.cooldown_until)
+            except Exception:
+                pass
         # 自适应时长描述: >=1小时显示小时, 否则显示分钟(避免 0.33h 被显示为"0小时")
         wait_desc = f"{wait_time/3600:.1f}小时" if wait_time >= 3600 else f"{max(1, round(wait_time/60))}分钟"
         if self.rate_limit_count >= 3:
@@ -263,6 +328,16 @@ class ShareWorker:
         else:
             self.status = "cooldown"
             logger.warning(f"[Worker-{self.worker_id}] 分享失败第{self.rate_limit_count}次，等待{wait_desc}后重新排队")
+
+
+    def rest_after_success(self, seconds=8):
+        """成功后短休息 5-10 秒，不计入限制次数，强制换组换号"""
+        secs = max(5, min(15, int(seconds or 8)))
+        self.cooldown_until = time.time() + secs
+        self.needs_disconnect = True
+        self.status = "cooldown"
+        logger.info(f"[Worker-{self.worker_id}] 成功后短休息 {secs}s（不计限制），准备换号")
+        return secs
 
     def mark_restricted(self, reason=""):
         """标记水军号被限制"""
@@ -304,7 +379,7 @@ class ShareWorker:
                 self.last_error = "搜索超时"
                 raise
             except Exception as e:
-                self.last_error = str(e)
+                self.last_error = "搜索异常: " + str(e)
                 logger.error(f"[Worker-{self.worker_id}] 搜索异常: {e}")
                 return None, False
 
@@ -344,9 +419,45 @@ class ShareWorker:
             return None, False
         except FloodWaitError as e:
             logger.warning(f"[Worker-{self.worker_id}] FloodWait: {e.seconds}秒")
-            self.enter_cooldown(max(e.seconds, 60))
+            self.enter_cooldown(max(e.seconds, 300))
+            self.needs_disconnect = True
+            self._connected = False
+            self.status = "cooldown"
+            self.last_error = f"平台限流 {e.seconds}秒"
             return None, False
         except Exception as e:
+            err = str(e)
+            # 字符串形式的 FloodWait（A wait of N seconds）
+            if "wait of" in err.lower() and "seconds" in err.lower():
+                import re as _re
+                m = _re.search(r"wait of (\d+) seconds", err, _re.I)
+                secs = int(m.group(1)) if m else 3600
+                logger.warning(f"[Worker-{self.worker_id}] FloodWait(str): {secs}秒")
+                self.enter_cooldown(max(secs, 300))
+                self.needs_disconnect = True
+                self._connected = False
+                self.status = "cooldown"
+                self.last_error = f"平台限流 {secs}秒"
+                return None, False
+            # frozen 账号：立即删除，不进冷却池
+            if "frozen" in err.lower() or "not available for frozen" in err.lower() or "方法不可用" in err:
+                self.is_restricted = True
+                self.is_frozen = True
+                self.is_dead = True
+                self.cooldown_until = 0
+                self.restricted_reason = "账号已冻结（平台冻结，已自动删除）"
+                cb = getattr(self, "_on_frozen", None) or getattr(self, "_on_dead_detected", None)
+                if cb:
+                    try:
+                        cb(self.worker_id, self.phone, "frozen")
+                    except Exception:
+                        pass
+                self.status = "dead"
+                self.needs_disconnect = True
+                self._connected = False
+                self.last_error = "frozen account"
+                logger.error(f"[Worker-{self.worker_id}] frozen，立即删除，不进冷却")
+                return None, False
             logger.error(f"[Worker-{self.worker_id}] 搜索用户出错: {e}")
             raise
 
@@ -356,7 +467,7 @@ class ShareWorker:
         1. 给Bot发 /start
         2. Bot回复广告消息（图片+文案+分享按钮）
         3. 水军点击分享按钮触发inline query，在目标用户聊天中发送
-        4. 如果没有inline分享按钮，直接转发广告消息
+        4. 没有inline分享按钮时，用消息转发箭头转发给目标
         5. 验证发送状态
 
         返回: (success, message, bot_restricted)
@@ -450,8 +561,8 @@ class ShareWorker:
 
             # === Step 1: 发送 /start ===
             await self.client.send_message(bot_entity, "/start")
-            logger.info(f"[Worker-{self.worker_id}] 发送 /start 给 @{bot_username_to_use}")
-            import random as _rnd; _wait = _rnd.randint(10, 20); logger.info(f"[Worker-{self.worker_id}] 等待 {_wait} 秒获取广告..."); await asyncio.sleep(_wait)
+            self._log_step(3, "给本组Bot发送/start", bot_username_to_use)
+            import random as _rnd; _wait = _rnd.randint(3, 5); logger.info(f"[Worker-{self.worker_id}] 等待 {_wait} 秒获取广告..."); await asyncio.sleep(_wait); await asyncio.sleep(__import__("random").randint(1,5))  # 步骤间延迟
 
             # === Step 2: 获取Bot回复的广告消息 ===
             messages = await self.client.get_messages(bot_entity, limit=10)
@@ -488,7 +599,7 @@ class ShareWorker:
             if ad_msg is None:
                 # Bot可能响应慢，再等10秒重试
                 logger.info(f"[Worker-{self.worker_id}] Bot未立即回复，再等10秒...")
-                await asyncio.sleep(10)
+                await asyncio.sleep(2)
                 messages = await self.client.get_messages(bot_entity, limit=10)
                 for msg in messages:
                     if msg.sender_id != my_id:
@@ -508,9 +619,10 @@ class ShareWorker:
                     return False, f"Bot @{bot_username_to_use} 未返回广告消息(重试后仍无)", False
 
             # === Step 3: 分享广告给目标用户 ===
+            share_query = share_query or "ad"  # 强制inline
             if share_query is not None:
                 # 有inline分享按钮 → 使用 inline query 分享
-                logger.info(f"[Worker-{self.worker_id}] 使用inline分享，query: '{share_query}'")
+                self._log_step(4, "读取Bot消息并点击分享按钮", getattr(target_user, "username", "")); logger.info(f"[Worker-{self.worker_id}] 使用inline分享，query: '{share_query}'")
                 try:
                     inline_results = await self.client(GetInlineBotResultsRequest(
                         bot=bot_entity,
@@ -535,10 +647,10 @@ class ShareWorker:
                 # 发送 inline 结果给目标用户
                 result = inline_results.results[0]
                 try:
-                    await self.client(SendInlineBotResultRequest(
+                    self._log_step(6, "确认用户并点击发送", getattr(target_user, "username", "")); await self.client(SendInlineBotResultRequest(
                         peer=target_user,
                         query_id=inline_results.query_id,
-                        result_id=result.id,
+                        id=result.id,
                         random_id=int(time.time() * 1000000)
                     ))
                 except QueryIdInvalidError:
@@ -551,9 +663,10 @@ class ShareWorker:
                     return False, f"发送失败: {e}", False
 
                 logger.info(f"[Worker-{self.worker_id}] ✅ 通过inline分享成功")
+                self._log_step(7, "发送成功", getattr(target_user, "username", ""))
             else:
-                # 没有inline分享按钮 → 直接转发广告消息
-                logger.info(f"[Worker-{self.worker_id}] 使用转发方式分享广告")
+                # 无 inline 分享按钮，但消息有转发箭头 → 转发广告给目标
+                self._log_step(4, "读取Bot消息并点击转发")
                 try:
                     await self.client.forward_messages(target_user, ad_msg)
                 except Exception as e:
@@ -561,15 +674,15 @@ class ShareWorker:
                     if "banned" in err_str.lower() or "restricted" in err_str.lower():
                         return False, f"转发被限制: {e}", False
                     if "too many" in err_str.lower() or "flood" in err_str.lower():
-                        logger.warning(f"[Worker-{self.worker_id}] 转发频率限制(第{self.rate_limit_count+1}次): {e}")
+                        logger.warning(f"[Worker-{self.worker_id}] 转发频率限制: {e}")
                         self.enter_cooldown(3600)
-                        return False, f"转发失败: Too many requests (已限制{self.rate_limit_count}次)", False
-                    if "blocked" in err_str.lower() or "you blocked" in err_str.lower():
-                        return False, f"You blocked this user", False
+                        return False, "转发失败: 请求过多", False
+                    if "blocked" in err_str.lower():
+                        return False, "You blocked this user", False
                     return False, f"转发失败: {e}", False
-                logger.info(f"[Worker-{self.worker_id}] ✅ 转发广告消息成功")
+                self._log_step(6, "确认用户并点击发送")
             # === Step 4: 验证发送 - 检查消息是否出现在目标用户聊天中 ===
-            await asyncio.sleep(5)  # 等待5秒让TG处理转发
+            await asyncio.sleep(1); await asyncio.sleep(__import__("random").randint(1,5))  # 步骤间延迟
             delivered = False
             try:
                 history = await self.client.get_messages(target_user, limit=5)
@@ -615,7 +728,7 @@ class ShareWorker:
 
         except FloodWaitError as e:
             self.enter_cooldown(e.seconds)
-            return False, f"FloodWait: 需等待{e.seconds}秒", bot_restricted
+            return False, f"平台限流: 需等待{e.seconds}秒", bot_restricted
         except PeerFloodError:
             # 被TG检测到频繁发送 → 标记水军号被限制
             self.mark_restricted("PeerFlood: 被TG检测到频繁分享广告")
@@ -651,7 +764,7 @@ class ShareWorker:
         """
         执行完整的分享任务：
         1. 检查是否在冷却期或被限制
-        2. 先搜索目标用户确认存在
+        2. 先给Bot发/start获取广告，再搜索用户并转发
         3. 通过Bot分享广告给目标用户
         4. 验证发送状态
         5. 如果被限制，标记状态
@@ -673,7 +786,8 @@ class ShareWorker:
         self.status = "working"
 
         # Step 1: 搜索并确认目标用户
-        logger.info(f"[Worker-{self.worker_id}] 搜索目标用户: @{target_username}")
+        logger.info(f"[Worker-{self.worker_id}] 步骤2: 检查目标用户 @{target_username}")
+        self._log_step(5, "搜索指定用户", target_username)
         user, matched = await self.search_user(target_username)
 
         if not user:
@@ -768,17 +882,6 @@ class ShareWorker:
         return False
 
     async def forward_share_to_user(self, user_entity, bot_msg=None):
-        """转发分享内容到目标用户"""
-        try:
-            if not user_entity:
-                return False, "无目标用户"
-            # 如果有 bot 消息，直接转发
-            if bot_msg and hasattr(self, "client") and self.client:
-                await self.client.forward_messages(user_entity, bot_msg)
-                return True, "转发成功"
-            # 否则发一条简单消息
-            await self.client.send_message(user_entity, "你好")
-            return True, "发送成功"
-        except Exception as e:
-            logger.warning(f"[Worker] forward_share_to_user 失败: {e}")
-            return False, str(e)
+        """已禁用直接转发，必须走 inline 分享"""
+        logger.warning(f"[Worker-{self.worker_id}] 拒绝直接转发，必须使用 Bot inline 分享")
+        return False, "禁止直接转发，必须走 Bot 分享按钮"
